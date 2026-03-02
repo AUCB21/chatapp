@@ -20,19 +20,24 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Validate environment variables
+  // Validate environment variables at runtime
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    console.error("Missing Supabase environment variables in middleware");
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json(
-        { error: "Server configuration error" },
-        { status: 500 }
-      );
+    // During build, env vars might not be present - allow it
+    if (process.env.NODE_ENV === 'production') {
+      console.error("Missing Supabase environment variables in middleware");
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json(
+          { error: "Server configuration error - Missing Supabase credentials" },
+          { status: 500 }
+        );
+      }
+      return NextResponse.redirect(new URL("/login", req.url));
     }
-    return NextResponse.redirect(new URL("/login", req.url));
+    // During development/build, just pass through
+    return NextResponse.next();
   }
 
   let res = NextResponse.next({ request: req });

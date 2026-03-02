@@ -11,10 +11,14 @@ export async function createSupabaseServer() {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error(
+    // Provide clear error message for runtime
+    const error = new Error(
       "Missing Supabase environment variables. " +
-      "Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY"
+      "Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your Vercel project settings: " +
+      "https://vercel.com/dashboard -> Your Project -> Settings -> Environment Variables"
     );
+    console.error("[Supabase] Configuration error:", error.message);
+    throw error;
   }
 
   const cookieStore = await cookies();
