@@ -20,11 +20,26 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Validate environment variables
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error("Missing Supabase environment variables in middleware");
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        { error: "Server configuration error" },
+        { status: 500 }
+      );
+    }
+    return NextResponse.redirect(new URL("/login", req.url));
+  }
+
   let res = NextResponse.next({ request: req });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         getAll: () => req.cookies.getAll(),
