@@ -81,8 +81,7 @@ export const useChatStore = create<ChatState>()(
       appendMessage: (chatId, message) =>
         set(
           (state) => {
-            const existing = state.messages[chatId];
-            if (!existing) return state;
+            const existing = state.messages[chatId] ?? [];
             if (existing.some((m) => m.id === message.id)) return state;
             return {
               messages: {

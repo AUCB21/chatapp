@@ -4,6 +4,7 @@ import { useEffect, useCallback, useRef } from "react";
 import { useChatStore, selectActiveMessages } from "@/store/chatStore";
 import type { ChatState } from "@/store/chatStore";
 import { supabase } from "@/lib/supabaseClient";
+import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import type { Message } from "@/db/schema";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
@@ -29,6 +30,8 @@ interface UseChatReturn {
 // --- Hook ---
 
 export function useChat(): UseChatReturn {
+  const isReady = useSupabaseAuth();
+
   const {
     chats,
     activeChatId,
@@ -93,6 +96,8 @@ export function useChat(): UseChatReturn {
   // Requires Realtime to be enabled on all three tables in Supabase.
 
   useEffect(() => {
+    if (!isReady) return;
+
     const channel = supabase
       .channel("chat-list-changes")
       .on(
@@ -110,18 +115,26 @@ export function useChat(): UseChatReturn {
         { event: "INSERT", schema: "public", table: "invitations" },
         () => { refreshChats(); }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        if (status === "SUBSCRIBED") {
+          console.log("[Realtime] chat-list-changes: subscribed");
+        } else if (status === "CHANNEL_ERROR") {
+          console.error("[Realtime] chat-list-changes error:", err);
+        } else if (status === "TIMED_OUT") {
+          console.warn("[Realtime] chat-list-changes timed out");
+        }
+      });
 
     return () => {
       channel.unsubscribe();
     };
-  }, []);
+  }, [isReady]);
 
   // --- Fetch messages + subscribe to Realtime when active chat changes ---
   // Also re-runs when the user accepts a pending invitation (role changes).
 
   useEffect(() => {
-    if (!activeChatId) return;
+    if (!isReady || !activeChatId) return;
 
     // Pending chats show an accept/decline prompt — no messages to load
     if (activeMembership === "pending") return;
@@ -177,7 +190,15 @@ export function useChat(): UseChatReturn {
             appendMessage(activeChatId!, incoming);
           }
         )
-        .subscribe();
+        .subscribe((status, err) => {
+          if (status === "SUBSCRIBED") {
+            console.log(`[Realtime] messages:${activeChatId}: subscribed`);
+          } else if (status === "CHANNEL_ERROR") {
+            console.error(`[Realtime] messages:${activeChatId} error:`, err);
+          } else if (status === "TIMED_OUT") {
+            console.warn(`[Realtime] messages:${activeChatId} timed out`);
+          }
+        });
 
       channelRef.current = channel;
     }
@@ -188,7 +209,7 @@ export function useChat(): UseChatReturn {
       channelRef.current?.unsubscribe();
       channelRef.current = null;
     };
-  }, [activeChatId, activeMembership]);
+  }, [isReady, activeChatId, activeMembership]);
 
   // --- Send message with optimistic update ---
 
