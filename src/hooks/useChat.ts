@@ -178,6 +178,7 @@ export function useChat(): UseChatReturn {
             filter: `chat_id=eq.${activeChatId}`,
           },
           (payload) => {
+            console.log("[Realtime] message received:", payload.new);
             // Realtime delivers raw Postgres rows (snake_case), not Drizzle-mapped camelCase.
             const raw = payload.new as Record<string, unknown>;
             const incoming: Message = {
