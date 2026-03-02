@@ -1,10 +1,12 @@
-import { createBrowserClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * Client-side Supabase instance.
  * Used exclusively for Realtime subscriptions.
  * All data fetching goes through API routes.
+ * 
+ * Uses regular createClient (not SSR) for proper Realtime support.
  */
 
 let supabaseInstance: SupabaseClient | null = null;
@@ -40,7 +42,12 @@ function getSupabaseInstance(): SupabaseClient | null {
     return null;
   }
 
-  supabaseInstance = createBrowserClient(supabaseUrl, supabaseAnonKey);
+  supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+    },
+  });
   console.log('[Supabase] Client initialized');
   return supabaseInstance;
 }
