@@ -169,6 +169,7 @@ export function useChat(): UseChatReturn {
 
       const channel = supabase
         .channel(`messages:${activeChatId}`)
+        // Primary: postgres_changes (depends on publication + RLS + token)
         .on(
           "postgres_changes",
           {
@@ -178,8 +179,7 @@ export function useChat(): UseChatReturn {
             filter: `chat_id=eq.${activeChatId}`,
           },
           (payload) => {
-            console.log("[Realtime] message received:", payload.new);
-            // Realtime delivers raw Postgres rows (snake_case), not Drizzle-mapped camelCase.
+            console.log("[Realtime] postgres_changes message:", payload.new);
             const raw = payload.new as Record<string, unknown>;
             const incoming: Message = {
               id: raw.id as string,
@@ -189,6 +189,19 @@ export function useChat(): UseChatReturn {
               createdAt: new Date(raw.created_at as string),
             };
             appendMessage(activeChatId!, incoming);
+          }
+        )
+        // Fallback: broadcast (direct WebSocket, no publication/RLS needed)
+        .on(
+          "broadcast",
+          { event: "new-message" },
+          (payload) => {
+            console.log("[Realtime] broadcast message:", payload.payload);
+            const msg = payload.payload as Message;
+            appendMessage(activeChatId!, {
+              ...msg,
+              createdAt: new Date(msg.createdAt),
+            });
           }
         )
         .subscribe((status, err) => {
@@ -249,6 +262,15 @@ export function useChat(): UseChatReturn {
               m.id === optimisticMsg.id ? savedMsg : m
             )
         );
+
+        // Broadcast to other clients on the same channel.
+        // This is the reliable delivery path — does not depend on
+        // postgres_changes publication or RLS evaluation.
+        channelRef.current?.send({
+          type: "broadcast",
+          event: "new-message",
+          payload: savedMsg,
+        });
       } catch {
         // On failure, remove the optimistic entry.
         setMessages(

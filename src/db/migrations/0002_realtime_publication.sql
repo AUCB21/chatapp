@@ -10,12 +10,28 @@
 --    (lets the Realtime server read rows for RLS evaluation)
 -- ============================================================
 
--- 1. Add tables to the Realtime publication (idempotent)
+-- 1. Add tables to the Realtime publication (idempotent — skips if already added)
 --    Without this, Realtime receives ZERO change events.
-ALTER PUBLICATION supabase_realtime ADD TABLE chats;
-ALTER PUBLICATION supabase_realtime ADD TABLE memberships;
-ALTER PUBLICATION supabase_realtime ADD TABLE messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE invitations;
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE chats;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE memberships;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE messages;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE invitations;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- 2. Grant SELECT permissions to Realtime role
 GRANT SELECT ON chats TO supabase_realtime_admin;
