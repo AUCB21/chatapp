@@ -42,7 +42,13 @@ export default function ChatPage() {
   }, [activeChatId]);
 
   async function handleLogout() {
+    // Clear server-side session
     await fetch("/api/auth/logout", { method: "POST" });
+    
+    // Clear client-side Supabase session from localStorage
+    const { supabase } = await import("@/lib/supabaseClient");
+    await supabase.auth.signOut();
+    
     clearSession();
     router.push("/login");
   }

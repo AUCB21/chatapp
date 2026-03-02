@@ -27,7 +27,11 @@ export async function POST(req: NextRequest) {
 
     if (error) return unauthorized(error.message);
 
-    return ok({ id: data.user.id, email: data.user.email });
+    return ok({ 
+      id: data.user.id, 
+      email: data.user.email,
+      session: data.session, // Client needs this for localStorage auth
+    });
   } catch (error) {
     return serverError("Login failed", error);
   }

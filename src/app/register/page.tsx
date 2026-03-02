@@ -40,6 +40,12 @@ export default function RegisterPage() {
       }
 
       if (json.data.confirmed) {
+        // Set session in client Supabase for Realtime auth
+        if (json.data.session) {
+          const { supabase } = await import("@/lib/supabaseClient");
+          await supabase.auth.setSession(json.data.session);
+          console.log('[Auth] Session set in localStorage for Realtime');
+        }
         router.push("/");
       } else {
         setPendingConfirmation(true);

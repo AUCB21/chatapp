@@ -1,4 +1,4 @@
-import { createBrowserClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
@@ -6,7 +6,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * Used exclusively for Realtime subscriptions.
  * All data fetching goes through API routes.
  * 
- * Uses createBrowserClient which automatically reads session from cookies.
+ * Uses createClient with localStorage for auth (required for Realtime with RLS).
+ * Server-side uses cookies, but client needs localStorage for Realtime JWT.
  */
 
 let supabaseInstance: SupabaseClient | null = null;
@@ -40,8 +41,15 @@ export function getSupabase(): SupabaseClient {
     );
   }
 
-  supabaseInstance = createBrowserClient(supabaseUrl, supabaseAnonKey);
-  console.log('[Supabase] Client initialized with cookie-based auth');
+  supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: false,
+    },
+  });
+  
+  console.log('[Supabase] Client initialized with localStorage auth');
   return supabaseInstance;
 }
 

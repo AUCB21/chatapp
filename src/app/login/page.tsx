@@ -34,6 +34,14 @@ export default function LoginPage() {
       }
 
       setUser({ id: json.data.id, email: json.data.email, created_at: "" });
+
+      // Set session in client Supabase for Realtime auth
+      if (json.data.session) {
+        const { supabase } = await import("@/lib/supabaseClient");
+        await supabase.auth.setSession(json.data.session);
+        console.log('[Auth] Session set in localStorage for Realtime');
+      }
+
       router.push("/");
     } catch {
       setError("Something went wrong. Please try again.");
