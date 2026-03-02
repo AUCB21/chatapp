@@ -60,13 +60,6 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
     }
   }, []);
 
-  // Cleanup on unmount or chat change
-  useEffect(() => {
-    return () => {
-      cleanup();
-    };
-  }, [chatId]);
-
   const cleanup = useCallback(() => {
     // Close peer connection
     if (peerConnectionRef.current) {
@@ -135,38 +128,51 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
     channelRef.current = channel;
   }, [chatId, user]);
 
-  useEffect(() => {
-    if (chatId && callStatus !== 'idle' && callStatus !== 'ended') {
-      setupChannel();
-    }
-    return () => {
-      if (channelRef.current) {
-        channelRef.current.unsubscribe();
-        channelRef.current = null;
-      }
-    };
-  }, [chatId, callStatus, setupChannel]);
+  // Removed duplicate channel setup effect - now handled in main cleanup effect above
 
   // Send signal via Realtime
   const sendSignal = useCallback(async (signal: VoiceSignalType) => {
     if (!channelRef.current) {
-      setupChannel();
-      // Wait a bit for channel to be ready
-      await new Promise(resolve => setTimeout(resolve, 100));
+      console.error('Cannot send signal: channel not ready');
+      return;
     }
     
-    if (channelRef.current) {
+    try {
       await channelRef.current.send({
         type: 'broadcast',
         event: 'voice-signal',
         payload: signal,
       });
+    } catch (err) {
+      console.error('Failed to send signal:', err);
+      throw err;
     }
-  }, [setupChannel]);
+  }, []);
 
   // Handle incoming call offer
   const handleIncomingOffer = async (payload: Extract<VoiceSignalType, { type: 'call-offer' }>) => {
-    if (callStatus !== 'idle') return; // Already in a call
+    if (!user) return;
+
+    // Handle glare: both users calling simultaneously
+    if (callStatus === 'calling' && peerConnectionRef.current) {
+      // Use alphanumeric comparison to decide who backs off
+      // Lower ID backs off and becomes the answerer
+      if (user.id < payload.from) {
+        console.log('Glare detected: backing off and accepting incoming call');
+        // Reset our call attempt and accept theirs
+        if (peerConnectionRef.current) {
+          peerConnectionRef.current.close();
+        }
+        stopMediaStream(localStreamRef.current);
+        localStreamRef.current = null;
+      } else {
+        // We win the glare - ignore their offer
+        console.log('Glare detected: continuing our call attempt');
+        return;
+      }
+    } else if (callStatus !== 'idle') {
+      return; // Already in a call
+    }
 
     setCaller({ id: payload.from, name: payload.fromName });
     setIsIncomingCall(true);
@@ -180,7 +186,13 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
       peerConnectionRef.current = pc;
     }
 
-    await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(payload.offer));
+    try {
+      await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(payload.offer));
+    } catch (err) {
+      console.error('Failed to set remote description:', err);
+      setError('Failed to process incoming call');
+      cleanup();
+    }
   };
 
   // Handle answer to our call
@@ -272,8 +284,7 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // Send offer via Realtime
-      setupChannel();
+      // Send offer via Realtime (channel already set up in useEffect)
       await sendSignal({
         type: 'call-offer',
         from: user.id,
@@ -351,6 +362,16 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
     toggleStreamMute(localStreamRef.current, newMutedState);
     setIsMuted(newMutedState);
   };
+
+  // Setup channel when chat opens (subscribe to all voice signals)
+  useEffect(() => {
+    if (chatId && user) {
+      setupChannel();
+    }
+    return () => {
+      cleanup();
+    };
+  }, [chatId, user, setupChannel, cleanup]);
 
   return {
     callStatus,

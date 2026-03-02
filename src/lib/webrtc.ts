@@ -68,11 +68,13 @@ export function stopMediaStream(stream: MediaStream | null): void {
 
 /**
  * Toggle mute state of an audio stream
+ * @param stream - The media stream to mute/unmute
+ * @param shouldMute - true to mute, false to unmute
  */
-export function toggleStreamMute(stream: MediaStream | null, muted: boolean): void {
+export function toggleStreamMute(stream: MediaStream | null, shouldMute: boolean): void {
   if (!stream) return;
   stream.getAudioTracks().forEach((track) => {
-    track.enabled = !muted;
+    track.enabled = !shouldMute; // enabled=false means muted
   });
 }
 
