@@ -9,13 +9,20 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 let supabaseInstance: SupabaseClient | null = null;
 
-function getSupabaseClient() {
+/**
+ * Get or create the Supabase client instance.
+ * Lazily initialized on first access in the browser.
+ * 
+ * This function approach avoids the Proxy overhead while still
+ * preventing initialization during the Next.js build process.
+ */
+export function getSupabase(): SupabaseClient {
   // Only initialize in the browser
   if (typeof window === 'undefined') {
     throw new Error('Supabase client can only be used in the browser');
   }
 
-  // Return existing instance if already created
+  // Return cached instance if already created
   if (supabaseInstance) {
     return supabaseInstance;
   }
@@ -38,11 +45,5 @@ function getSupabaseClient() {
   return supabaseInstance;
 }
 
-// Export a getter proxy that initializes lazily
-export const supabase = new Proxy({} as SupabaseClient, {
-  get(target, prop) {
-    const client = getSupabaseClient();
-    const value = (client as any)[prop];
-    return typeof value === 'function' ? value.bind(client) : value;
-  }
-});
+// Backwards compatibility: export singleton that's only safe to access in browser
+export const supabase = typeof window !== 'undefined' ? getSupabase() : ({} as SupabaseClient);

@@ -6,9 +6,6 @@ import { useChat } from "@/hooks/useChat";
 import { useSessionStore } from "@/store/sessionStore";
 import NewChatModal from "@/components/NewChatModal";
 
-// Force dynamic rendering - no static generation
-export const dynamic = 'force-dynamic';
-
 export default function ChatPage() {
   const router = useRouter();
   const user = useSessionStore((s) => s.user);
