@@ -4,8 +4,12 @@ import { useState, useEffect, useRef, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useChat } from "@/hooks/useChat";
 import { useSessionStore } from "@/store/sessionStore";
+import { useScreenShare } from "@/hooks/useScreenShare";
+import { useVoiceCall } from "@/hooks/useVoiceCall";
 import NewChatModal from "@/components/NewChatModal";
 import VoiceCallControls from "@/components/VoiceCallControls";
+import ScreenShareControls from "@/components/ScreenShareControls";
+import ScreenShareViewer from "@/components/ScreenShareViewer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -32,15 +36,43 @@ export default function ChatPage() {
     declineChat,
   } = useChat();
 
+  const { shareStatus, presenter } = useScreenShare(activeChatId);
+  const { callStatus } = useVoiceCall(activeChatId);
+
   const [input, setInput] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joiningChatId, setJoiningChatId] = useState<string | null>(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [activeChatId, messages.length]);
+
+  // Check scroll position to show/hide scroll-to-bottom button
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    // Find the ScrollArea viewport element
+    const viewport = container.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement;
+    if (!viewport) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = viewport;
+      const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+      setShowScrollButton(!isNearBottom && messages.length > 0);
+    };
+
+    viewport.addEventListener('scroll', handleScroll);
+    return () => viewport.removeEventListener('scroll', handleScroll);
+  }, [messages.length, activeChatId]);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   // Clear join error when switching chats
   useEffect(() => {
@@ -249,6 +281,14 @@ export default function ChatPage() {
                 chatName={activeChat.name}
                 canCall={!isPending && canWrite}
               />
+              
+              {/* Screen share controls */}
+              <ScreenShareControls
+                chatId={activeChatId}
+                chatName={activeChat.name}
+                canShare={!isPending && canWrite}
+                isInCall={callStatus === 'connected'}
+              />
             </div>
 
             {/* Pending: accept / decline prompt */}
@@ -296,7 +336,7 @@ export default function ChatPage() {
             ) : (
               <>
                 {/* Messages */}
-                <div className="flex-1 overflow-hidden">
+                <div className="flex-1 overflow-hidden relative" ref={messagesContainerRef}>
                   <ScrollArea className="h-full px-6 py-5">
                     <div className="flex flex-col gap-1">
                     {loading.messages && (
@@ -347,6 +387,20 @@ export default function ChatPage() {
                     <div ref={messagesEndRef} />
                     </div>
                   </ScrollArea>
+                  
+                  {/* Scroll to bottom button */}
+                  {showScrollButton && (
+                    <Button
+                      onClick={scrollToBottom}
+                      size="sm"
+                      className="absolute bottom-6 right-6 rounded-full shadow-lg gap-2 z-10"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 13.5L12 21m0 0l-7.5-7.5M12 21V3" />
+                      </svg>
+                      Go to bottom
+                    </Button>
+                  )}
                 </div>
 
                 {/* Input area */}
@@ -413,6 +467,13 @@ export default function ChatPage() {
           await refreshChats();
           setActiveChat(chatId);
         }}
+      />
+
+      {/* Screen Share Viewer */}
+      <ScreenShareViewer
+        isActive={shareStatus === 'viewing'}
+        presenterName={presenter?.name || null}
+        onClose={() => {}}
       />
     </div>
   );

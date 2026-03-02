@@ -102,3 +102,90 @@ export function getBrowserName(): string {
   if (userAgent.includes('Edge')) return 'Edge';
   return 'your browser';
 }
+
+// ============= SCREEN SHARING =============
+
+export type ScreenShareResolution = '720p' | '1080p' | '4k';
+
+export interface ScreenShareOptions {
+  resolution: ScreenShareResolution;
+  includeAudio: boolean;
+}
+
+/**
+ * Map resolution names to actual dimensions
+ */
+function getResolutionConstraints(resolution: ScreenShareResolution): { width: number; height: number; frameRate: number } {
+  switch (resolution) {
+    case '720p':
+      return { width: 1280, height: 720, frameRate: 30 };
+    case '1080p':
+      return { width: 1920, height: 1080, frameRate: 30 };
+    case '4k':
+      return { width: 3840, height: 2160, frameRate: 30 };
+  }
+}
+
+/**
+ * Request screen sharing with specified options
+ * Browser will show native picker for screen/window selection
+ */
+export async function requestScreenShare(options: ScreenShareOptions): Promise<MediaStream> {
+  if (!isScreenShareSupported()) {
+    throw new Error('Screen sharing is not supported in your browser.');
+  }
+
+  try {
+    const constraints = getResolutionConstraints(options.resolution);
+    
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        width: { ideal: constraints.width, max: constraints.width },
+        height: { ideal: constraints.height, max: constraints.height },
+        frameRate: { ideal: constraints.frameRate, max: constraints.frameRate },
+      },
+      audio: options.includeAudio ? {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      } : false,
+    });
+
+    return stream;
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.name === 'NotAllowedError') {
+        throw new Error('Screen sharing denied. Please allow screen sharing to continue.');
+      }
+      if (error.name === 'NotFoundError') {
+        throw new Error('No screen source found. Please try again.');
+      }
+    }
+    throw new Error('Failed to start screen sharing. Please check your browser settings.');
+  }
+}
+
+/**
+ * Check if browser supports screen sharing
+ */
+export function isScreenShareSupported(): boolean {
+  return !!(
+    typeof navigator !== 'undefined' &&
+    navigator.mediaDevices &&
+    typeof navigator.mediaDevices.getDisplayMedia === 'function'
+  );
+}
+
+/**
+ * Stop screen sharing tracks
+ */
+export function stopScreenShare(stream: MediaStream | null): void {
+  stopMediaStream(stream);
+}
+
+/**
+ * Get track type ('video' for screen, 'audio' for system audio)
+ */
+export function getTrackType(track: MediaStreamTrack): 'video' | 'audio' {
+  return track.kind as 'video' | 'audio';
+}
