@@ -154,6 +154,8 @@ export function useChat(): UseChatReturn {
         setLoading("messages", false);
       }
 
+      console.log('[Realtime] Setting up channel for chat:', activeChatId);
+      
       const channel = supabase
         .channel(`messages:${activeChatId}`)
         .on(
@@ -165,7 +167,13 @@ export function useChat(): UseChatReturn {
             filter: `chat_id=eq.${activeChatId}`,
           },
           (payload) => {
-            console.log('[Realtime] Message received:', payload);
+            console.log('[Realtime] ✅ MESSAGE RECEIVED!', payload);
+            console.log('[Realtime] Payload details:', {
+              eventType: payload.eventType,
+              schema: payload.schema,
+              table: payload.table,
+              new: payload.new,
+            });
             // Realtime delivers raw Postgres rows (snake_case), not Drizzle-mapped camelCase.
             const raw = payload.new as Record<string, unknown>;
             const incoming: Message = {
@@ -175,13 +183,19 @@ export function useChat(): UseChatReturn {
               content: raw.content as string,
               createdAt: new Date(raw.created_at as string),
             };
+            console.log('[Realtime] Appending message:', incoming.content);
             appendMessage(activeChatId!, incoming);
           }
         )
         .subscribe((status, err) => {
-          console.log(`[Realtime] Messages channel messages:${activeChatId} →`, status, err ?? "");
+          console.log(`[Realtime] Messages channel status →`, status);
           if (err) {
-            console.error(`[Realtime] Messages subscription error:`, err);
+            console.error(`[Realtime] ❌ Subscription error:`, err);
+          }
+          if (status === 'SUBSCRIBED') {
+            console.log('[Realtime] ✅ Successfully subscribed to messages');
+            // Log channel state
+            console.log('[Realtime] Channel state:', channel.state);
           }
         });
 

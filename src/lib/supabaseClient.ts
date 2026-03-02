@@ -46,9 +46,27 @@ function getSupabaseInstance(): SupabaseClient | null {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
+      storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+      storageKey: 'sb-auth-token',
+    },
+    realtime: {
+      params: {
+        eventsPerSecond: 10,
+      },
     },
   });
-  console.log('[Supabase] Client initialized');
+  
+  // Log auth state
+  supabaseInstance.auth.getSession().then(({ data: { session }, error }) => {
+    if (error) {
+      console.error('[Supabase] Session error:', error);
+    } else if (session) {
+      console.log('[Supabase] Client initialized with session:', session.user.email);
+    } else {
+      console.warn('[Supabase] Client initialized WITHOUT session');
+    }
+  });
+  
   return supabaseInstance;
 }
 
