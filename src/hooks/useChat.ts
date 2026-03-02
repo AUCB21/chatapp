@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useCallback, useRef, useState } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { useChatStore, selectActiveMessages } from "@/store/chatStore";
 import type { ChatState } from "@/store/chatStore";
-import { getSupabase } from "@/lib/supabaseClient";
+import { supabase } from "@/lib/supabaseClient";
 import type { Message } from "@/db/schema";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
@@ -63,24 +63,6 @@ export function useChat(): UseChatReturn {
   const activeMembership = useChatStore(activeMembershipSelector);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
-  const [hasSession, setHasSession] = useState(false);
-
-  // Wait for auth session before subscribing
-  useEffect(() => {
-    async function checkSession() {
-      const supabase = getSupabase();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        console.log('[useChat] Auth session ready:', session.user.email);
-        setHasSession(true);
-      } else {
-        console.warn('[useChat] No auth session yet - will retry');
-        // Retry after a delay to wait for SessionSync
-        setTimeout(checkSession, 500);
-      }
-    }
-    checkSession();
-  }, []);
 
   // --- Fetch all accessible chats on mount ---
 
@@ -111,13 +93,6 @@ export function useChat(): UseChatReturn {
   // Requires Realtime to be enabled on all three tables in Supabase.
 
   useEffect(() => {
-    if (!hasSession) {
-      console.log('[useChat] Waiting for session before subscribing to chat list');
-      return;
-    }
-
-    console.log('[useChat] Setting up chat list subscription');
-    const supabase = getSupabase();
     const channel = supabase
       .channel("chat-list-changes")
       .on(
@@ -135,14 +110,12 @@ export function useChat(): UseChatReturn {
         { event: "INSERT", schema: "public", table: "invitations" },
         () => { refreshChats(); }
       )
-      .subscribe((status) => {
-        console.log('[useChat] Chat list subscription status:', status);
-      });
+      .subscribe();
 
     return () => {
       channel.unsubscribe();
     };
-  }, [hasSession]);
+  }, []);
 
   // --- Fetch messages + subscribe to Realtime when active chat changes ---
   // Also re-runs when the user accepts a pending invitation (role changes).
@@ -152,12 +125,6 @@ export function useChat(): UseChatReturn {
 
     // Pending chats show an accept/decline prompt — no messages to load
     if (activeMembership === "pending") return;
-
-    // Wait for session before subscribing
-    if (!hasSession) {
-      console.log('[useChat] Waiting for session before subscribing to messages');
-      return;
-    }
 
     if (channelRef.current) {
       channelRef.current.unsubscribe();
@@ -187,9 +154,6 @@ export function useChat(): UseChatReturn {
         setLoading("messages", false);
       }
 
-      console.log('[Realtime] Setting up channel for chat:', activeChatId);
-      
-      const supabase = getSupabase();
       const channel = supabase
         .channel(`messages:${activeChatId}`)
         .on(
@@ -201,13 +165,6 @@ export function useChat(): UseChatReturn {
             filter: `chat_id=eq.${activeChatId}`,
           },
           (payload) => {
-            console.log('[Realtime] ✅ MESSAGE RECEIVED!', payload);
-            console.log('[Realtime] Payload details:', {
-              eventType: payload.eventType,
-              schema: payload.schema,
-              table: payload.table,
-              new: payload.new,
-            });
             // Realtime delivers raw Postgres rows (snake_case), not Drizzle-mapped camelCase.
             const raw = payload.new as Record<string, unknown>;
             const incoming: Message = {
@@ -217,21 +174,10 @@ export function useChat(): UseChatReturn {
               content: raw.content as string,
               createdAt: new Date(raw.created_at as string),
             };
-            console.log('[Realtime] Appending message:', incoming.content);
             appendMessage(activeChatId!, incoming);
           }
         )
-        .subscribe((status, err) => {
-          console.log(`[Realtime] Messages channel status →`, status);
-          if (err) {
-            console.error(`[Realtime] ❌ Subscription error:`, err);
-          }
-          if (status === 'SUBSCRIBED') {
-            console.log('[Realtime] ✅ Successfully subscribed to messages');
-            // Log channel state
-            console.log('[Realtime] Channel state:', channel.state);
-          }
-        });
+        .subscribe();
 
       channelRef.current = channel;
     }
@@ -242,7 +188,7 @@ export function useChat(): UseChatReturn {
       channelRef.current?.unsubscribe();
       channelRef.current = null;
     };
-  }, [activeChatId, activeMembership, hasSession]);
+  }, [activeChatId, activeMembership]);
 
   // --- Send message with optimistic update ---
 

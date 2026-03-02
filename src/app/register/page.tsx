@@ -40,13 +40,6 @@ export default function RegisterPage() {
       }
 
       if (json.data.confirmed) {
-        // Sync session to client-side Supabase for Realtime auth
-        if (json.data.session) {
-          const { getSupabase } = await import("@/lib/supabaseClient");
-          const supabase = getSupabase();
-          await supabase.auth.setSession(json.data.session);
-          console.log('[Auth] Session synced to client-side Supabase');
-        }
         router.push("/");
       } else {
         setPendingConfirmation(true);

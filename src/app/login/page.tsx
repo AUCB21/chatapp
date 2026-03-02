@@ -33,17 +33,7 @@ export default function LoginPage() {
         return;
       }
 
-      // Set user in store
       setUser({ id: json.data.id, email: json.data.email, created_at: "" });
-
-      // CRITICAL: Sync session to client-side Supabase for Realtime auth
-      if (json.data.session) {
-        const { getSupabase } = await import("@/lib/supabaseClient");
-        const supabase = getSupabase();
-        await supabase.auth.setSession(json.data.session);
-        console.log('[Auth] Session synced to client-side Supabase');
-      }
-
       router.push("/");
     } catch {
       setError("Something went wrong. Please try again.");
