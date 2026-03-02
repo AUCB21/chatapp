@@ -45,5 +45,15 @@ export function getSupabase(): SupabaseClient {
   return supabaseInstance;
 }
 
-// Backwards compatibility: export singleton that's only safe to access in browser
-export const supabase = typeof window !== 'undefined' ? getSupabase() : ({} as SupabaseClient);
+// Export a lazy-initialized client using a Proxy
+// This ensures the client is only created when actually accessed
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(target, prop) {
+    // Only initialize in browser when accessed
+    if (typeof window === 'undefined') {
+      throw new Error('Supabase client can only be used in the browser');
+    }
+    const client = getSupabase();
+    return (client as any)[prop];
+  }
+});
