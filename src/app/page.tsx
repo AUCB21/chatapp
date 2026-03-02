@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useChat } from "@/hooks/useChat";
 import { useSessionStore } from "@/store/sessionStore";
 import NewChatModal from "@/components/NewChatModal";
+import VoiceCallControls from "@/components/VoiceCallControls";
 
 export default function ChatPage() {
   const router = useRouter();
@@ -211,7 +212,7 @@ export default function ChatPage() {
               >
                 {activeChat.name[0].toUpperCase()}
               </div>
-              <div>
+              <div className="flex-1">
                 <p className="text-sm font-semibold leading-tight text-neutral-900">
                   {activeChat.name}
                 </p>
@@ -219,6 +220,13 @@ export default function ChatPage() {
                   {isPending ? "Pending invitation" : activeChat.role}
                 </p>
               </div>
+              
+              {/* Voice call controls */}
+              <VoiceCallControls
+                chatId={activeChatId}
+                chatName={activeChat.name}
+                canCall={!isPending && canWrite}
+              />
             </div>
 
             {/* Pending: accept / decline prompt */}
