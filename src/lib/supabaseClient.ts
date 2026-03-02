@@ -60,7 +60,23 @@ export function getSupabase(): SupabaseClient {
 
 /**
  * Direct export of Supabase client.
- * Calls getSupabase() immediately if in browser, otherwise provides empty object for build.
+ * Uses getter to ensure it's created when accessed, not at module load time.
+ * This ensures auth session from localStorage is available.
  * Components using this should be client-side only ("use client").
  */
-export const supabase = (typeof window !== 'undefined' && getSupabaseInstance()) || ({} as SupabaseClient);
+let _supabase: SupabaseClient | null = null;
+
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    if (!_supabase) {
+      if (typeof window === 'undefined') {
+        throw new Error('Supabase client can only be used in the browser');
+      }
+      _supabase = getSupabaseInstance();
+      if (!_supabase) {
+        throw new Error('Failed to initialize Supabase client');
+      }
+    }
+    return (_supabase as any)[prop];
+  },
+});
