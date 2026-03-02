@@ -129,8 +129,19 @@ export default function ChatPage() {
               onClick={() => setModalOpen(true)}
               className="w-full text-left px-5 py-4 border-b flex items-center gap-4 hover:bg-muted transition"
             >
-              <div className="w-12 h-12 rounded-full border-2 border-dashed border-muted-foreground/30 flex items-center justify-center shrink-0 text-muted-foreground text-2xl font-light">
-                +
+              <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center shrink-0 text-primary-foreground">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="w-6 h-6"
+                >
+                  <path d="M6 12L3.269 3.125A59.8 59.8 0 0 1 21.486 12a59.8 59.8 0 0 1-18.217 8.875zm0 0h7.5"/>
+                </svg>
               </div>
             <div>
               <p className="text-sm font-medium">New chat</p>
