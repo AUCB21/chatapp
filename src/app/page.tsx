@@ -6,6 +6,12 @@ import { useChat } from "@/hooks/useChat";
 import { useSessionStore } from "@/store/sessionStore";
 import NewChatModal from "@/components/NewChatModal";
 import VoiceCallControls from "@/components/VoiceCallControls";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
 
 export default function ChatPage() {
   const router = useRouter();
@@ -91,52 +97,55 @@ export default function ChatPage() {
   const isPending = activeChat?.role === "pending";
 
   return (
-    <div className="flex h-screen bg-white overflow-hidden">
+    <div className="flex h-screen bg-background overflow-hidden">
 
       {/* ── Sidebar ── */}
-      <aside className="w-95 shrink-0 border-r border-neutral-200 flex flex-col">
+      <aside className="w-95 shrink-0 border-r flex flex-col">
 
         {/* Header */}
-        <div className="px-5 h-16 border-b border-neutral-200 flex items-center justify-between shrink-0">
+        <div className="px-5 h-16 border-b flex items-center justify-between shrink-0">
           <span className="font-semibold text-base tracking-tight">Chat App</span>
           <div className="flex items-center gap-4">
-            <span className="text-xs text-neutral-400 truncate max-w-30">
+            <span className="text-xs text-muted-foreground truncate max-w-30">
               {user?.email}
             </span>
-            <button
+            <Button
               onClick={handleLogout}
-              className="text-xs text-neutral-400 hover:text-neutral-900 transition"
+              variant="ghost"
+              size="sm"
+              className="text-xs h-auto py-1"
             >
               Logout
-            </button>
+            </Button>
           </div>
         </div>
 
         {/* Chat list */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-hidden">
+          <ScrollArea className="h-full">
 
-          {/* New chat — first row */}
-          <button
-            onClick={() => setModalOpen(true)}
-            className="w-full text-left px-5 py-4 border-b border-neutral-100 flex items-center gap-4 hover:bg-neutral-50 transition"
-          >
-            <div className="w-12 h-12 rounded-full border-2 border-dashed border-neutral-300 flex items-center justify-center shrink-0 text-neutral-400 text-xl leading-none">
-              +
-            </div>
+            {/* New chat — first row */}
+            <button
+              onClick={() => setModalOpen(true)}
+              className="w-full text-left px-5 py-4 border-b flex items-center gap-4 hover:bg-muted transition"
+            >
+              <div className="w-12 h-12 rounded-full border-2 border-dashed border-muted-foreground/30 flex items-center justify-center shrink-0 text-muted-foreground text-2xl font-light">
+                +
+              </div>
             <div>
-              <p className="text-sm font-medium text-neutral-600">New chat</p>
-              <p className="text-xs text-neutral-400 mt-0.5">Invite someone by email</p>
+              <p className="text-sm font-medium">New chat</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Invite someone by email</p>
             </div>
           </button>
 
           {loading.chats && (
-            <p className="text-xs text-neutral-400 px-5 py-4">Loading chats…</p>
+            <p className="text-xs text-muted-foreground px-5 py-4">Loading chats…</p>
           )}
           {error.chats && (
-            <p className="text-xs text-red-500 px-5 py-4">{error.chats}</p>
+            <p className="text-xs text-destructive px-5 py-4">{error.chats}</p>
           )}
           {!loading.chats && chats.length === 0 && (
-            <p className="text-xs text-neutral-400 text-center px-5 py-10">
+            <p className="text-xs text-muted-foreground text-center px-5 py-10">
               No chats yet.
             </p>
           )}
@@ -149,29 +158,25 @@ export default function ChatPage() {
               <div
                 key={chat.id}
                 onClick={() => setActiveChat(chat.id)}
-                className={`w-full text-left px-5 py-4 border-b border-neutral-100 flex items-center gap-4 transition cursor-pointer ${
-                  isActive ? "bg-neutral-100" : "hover:bg-neutral-50"
+                className={`w-full text-left px-5 py-4 border-b flex items-center gap-4 transition cursor-pointer ${
+                  isActive ? "bg-muted" : "hover:bg-muted/50"
                 }`}
               >
-                <div
-                  className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 text-base font-semibold ${
-                    pending
-                      ? "bg-neutral-100 text-neutral-400"
-                      : "bg-neutral-200 text-neutral-600"
-                  }`}
-                >
-                  {chat.name[0].toUpperCase()}
-                </div>
+                <Avatar className="w-12 h-12 shrink-0">
+                  <AvatarFallback className={pending ? "bg-muted text-muted-foreground" : ""}>
+                    {chat.name[0].toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
 
                 <div className="flex-1 min-w-0">
                   <p
                     className={`text-sm font-semibold truncate ${
-                      pending ? "text-neutral-400" : "text-neutral-900"
+                      pending ? "text-muted-foreground" : ""
                     }`}
                   >
                     {chat.name}
                   </p>
-                  <p className="text-xs text-neutral-400 mt-0.5">
+                  <p className="text-xs text-muted-foreground mt-0.5">
                     {pending ? "Invited" : chat.role}
                   </p>
                 </div>
@@ -181,25 +186,29 @@ export default function ChatPage() {
                     className="flex gap-1.5 shrink-0"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <button
+                    <Button
                       onClick={() => handleJoin(chat.id)}
                       disabled={!!joiningChatId}
-                      className="text-xs px-3 py-1.5 rounded-full bg-neutral-900 text-white hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      size="sm"
+                      className="text-xs h-auto px-3 py-1.5 rounded-full"
                     >
                       {isJoining ? "…" : "Accept"}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       onClick={() => handleDecline(chat.id)}
                       disabled={!!joiningChatId}
-                      className="text-xs px-3 py-1.5 rounded-full bg-neutral-100 text-neutral-600 hover:bg-neutral-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      variant="secondary"
+                      size="sm"
+                      className="text-xs h-auto px-3 py-1.5 rounded-full"
                     >
                       Decline
-                    </button>
+                    </Button>
                   </div>
                 )}
               </div>
             );
           })}
+          </ScrollArea>
         </div>
       </aside>
 
@@ -208,21 +217,17 @@ export default function ChatPage() {
         {activeChat ? (
           <>
             {/* Chat header */}
-            <div className="h-16 px-6 border-b border-neutral-200 flex items-center gap-4 shrink-0">
-              <div
-                className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 ${
-                  isPending
-                    ? "bg-neutral-100 text-neutral-400"
-                    : "bg-neutral-200 text-neutral-600"
-                }`}
-              >
-                {activeChat.name[0].toUpperCase()}
-              </div>
+            <div className="h-16 px-6 border-b flex items-center gap-4 shrink-0">
+              <Avatar className="w-10 h-10 shrink-0">
+                <AvatarFallback className={isPending ? "bg-muted text-muted-foreground" : ""}>
+                  {activeChat.name[0].toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
               <div className="flex-1">
-                <p className="text-sm font-semibold leading-tight text-neutral-900">
+                <p className="text-sm font-semibold leading-tight">
                   {activeChat.name}
                 </p>
-                <p className="text-xs text-neutral-400 capitalize mt-0.5">
+                <p className="text-xs text-muted-foreground capitalize mt-0.5">
                   {isPending ? "Pending invitation" : activeChat.role}
                 </p>
               </div>
@@ -239,115 +244,124 @@ export default function ChatPage() {
             {isPending ? (
               <div className="flex-1 flex items-center justify-center px-6">
                 <div className="text-center max-w-xs">
-                  <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center mx-auto mb-5 text-2xl font-semibold text-neutral-400">
-                    {activeChat.name[0].toUpperCase()}
-                  </div>
-                  <p className="text-sm font-semibold text-neutral-900 mb-1">
+                  <Avatar className="w-16 h-16 mx-auto mb-5">
+                    <AvatarFallback className="bg-muted text-muted-foreground text-2xl">
+                      {activeChat.name[0].toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <p className="text-sm font-semibold mb-1">
                     {activeChat.name}
                   </p>
-                  <p className="text-xs text-neutral-400 mb-7">
+                  <p className="text-xs text-muted-foreground mb-7">
                     You&apos;ve been invited to join this chat.
                     Accept to start reading and sending messages.
                   </p>
 
                   {joinError && (
-                    <p className="text-xs text-red-500 mb-4">{joinError}</p>
+                    <p className="text-xs text-destructive mb-4">{joinError}</p>
                   )}
 
                   <div className="flex gap-3 justify-center">
-                    <button
+                    <Button
                       onClick={() => handleJoin(activeChatId!)}
                       disabled={!!joiningChatId}
-                      className="bg-neutral-900 text-white text-sm px-7 py-2.5 rounded-full hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      size="lg"
+                      className="px-7 rounded-full"
                     >
                       {joiningChatId === activeChatId ? "Joining…" : "Accept"}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       onClick={() => handleDecline(activeChatId!)}
                       disabled={!!joiningChatId}
-                      className="bg-neutral-100 text-neutral-700 text-sm px-7 py-2.5 rounded-full hover:bg-neutral-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      variant="secondary"
+                      size="lg"
+                      className="px-7 rounded-full"
                     >
                       Decline
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>
             ) : (
               <>
                 {/* Messages */}
-                <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-1">
-                  {loading.messages && (
-                    <p className="text-xs text-neutral-400 text-center py-4">
-                      Loading messages…
-                    </p>
-                  )}
-                  {!loading.messages && messages.length === 0 && (
-                    <p className="text-xs text-neutral-400 text-center py-10">
-                      No messages yet. Say something!
-                    </p>
-                  )}
+                <div className="flex-1 overflow-hidden">
+                  <ScrollArea className="h-full px-6 py-5">
+                    <div className="flex flex-col gap-1">
+                    {loading.messages && (
+                      <p className="text-xs text-muted-foreground text-center py-4">
+                        Loading messages…
+                      </p>
+                    )}
+                    {!loading.messages && messages.length === 0 && (
+                      <p className="text-xs text-muted-foreground text-center py-10">
+                        No messages yet. Say something!
+                      </p>
+                    )}
 
-                  {messages.map((msg, i) => {
-                    const isOwn =
-                      msg.userId === user?.id || msg.userId === "optimistic";
-                    const isOptimistic = msg.id.startsWith("optimistic-");
-                    const prevMsg = messages[i - 1];
-                    const isSameUser = prevMsg?.userId === msg.userId;
+                    {messages.map((msg, i) => {
+                      const isOwn =
+                        msg.userId === user?.id || msg.userId === "optimistic";
+                      const isOptimistic = msg.id.startsWith("optimistic-");
+                      const prevMsg = messages[i - 1];
+                      const isSameUser = prevMsg?.userId === msg.userId;
 
-                    return (
-                      <div
-                        key={msg.id}
-                        className={`flex ${isOwn ? "justify-end" : "justify-start"} ${
-                          isSameUser ? "mt-0.5" : "mt-4"
-                        }`}
-                      >
+                      return (
                         <div
-                          className={`max-w-[65%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                            isOwn
-                              ? `bg-neutral-900 text-white rounded-br-sm ${isOptimistic ? "opacity-60" : ""}`
-                              : "bg-neutral-100 text-neutral-900 rounded-bl-sm"
+                          key={msg.id}
+                          className={`flex ${isOwn ? "justify-end" : "justify-start"} ${
+                            isSameUser ? "mt-0.5" : "mt-4"
                           }`}
                         >
-                          <p className="whitespace-pre-wrap wrap-break-word">
-                            {msg.content}
-                          </p>
-                          <p className="text-[11px] mt-1 text-neutral-400 text-right">
-                            {new Date(msg.createdAt).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </p>
+                          <div
+                            className={`max-w-[65%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
+                              isOwn
+                                ? `bg-primary text-primary-foreground rounded-br-sm ${isOptimistic ? "opacity-60" : ""}`
+                                : "bg-muted rounded-bl-sm"
+                            }`}
+                          >
+                            <p className="whitespace-pre-wrap wrap-break-word">
+                              {msg.content}
+                            </p>
+                            <p className="text-[11px] mt-1 opacity-70 text-right">
+                              {new Date(msg.createdAt).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                  <div ref={messagesEndRef} />
+                      );
+                    })}
+                    <div ref={messagesEndRef} />
+                    </div>
+                  </ScrollArea>
                 </div>
 
                 {/* Input area */}
                 {canWrite ? (
                   <form
                     onSubmit={handleSend}
-                    className="px-5 py-4 border-t border-neutral-200 flex items-center gap-3 shrink-0"
+                    className="px-5 py-4 border-t flex items-center gap-3 shrink-0"
                   >
-                    <input
+                    <Input
                       type="text"
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       placeholder="Type a message…"
-                      className="flex-1 bg-neutral-100 rounded-full px-5 py-3 text-sm outline-none focus:ring-2 focus:ring-neutral-900 transition"
+                      className="flex-1 rounded-full"
                     />
-                    <button
+                    <Button
                       type="submit"
                       disabled={!input.trim()}
-                      className="bg-neutral-900 text-white text-sm px-6 py-3 rounded-full hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      className="rounded-full px-6"
                     >
                       Send
-                    </button>
+                    </Button>
                   </form>
                 ) : (
-                  <div className="px-6 py-4 border-t border-neutral-200 shrink-0">
-                    <p className="text-xs text-neutral-400 text-center">
+                  <div className="px-6 py-4 border-t shrink-0">
+                    <p className="text-xs text-muted-foreground text-center">
                       You have read-only access to this chat.
                     </p>
                   </div>
@@ -358,9 +372,9 @@ export default function ChatPage() {
         ) : (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
-              <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center mx-auto mb-4">
+              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
                 <svg
-                  className="w-7 h-7 text-neutral-400"
+                  className="w-7 h-7 text-muted-foreground"
                   fill="none"
                   stroke="currentColor"
                   strokeWidth={1.5}
@@ -373,7 +387,7 @@ export default function ChatPage() {
                   />
                 </svg>
               </div>
-              <p className="text-sm font-medium text-neutral-500">
+              <p className="text-sm font-medium text-muted-foreground">
                 Select a chat to start messaging
               </p>
             </div>
