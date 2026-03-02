@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(npm install -D dotenv)",
-      "Bash(npx next build)"
+      "Bash(npx next build)",
+      "Bash(npx drizzle-kit generate --custom --name=rls_policies)",
+      "Bash(npx drizzle-kit generate --custom --name=invitations_rls)",
+      "Bash(npx drizzle-kit generate --custom --name=realtime_publication)",
+      "Bash(ls -la src/db/migrations/*.sql)"
     ]
   }
 }
