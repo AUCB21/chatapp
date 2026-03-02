@@ -27,7 +27,12 @@ export async function POST(req: NextRequest) {
 
     if (error) return unauthorized(error.message);
 
-    return ok({ id: data.user.id, email: data.user.email });
+    // Return both user info AND session for client-side Supabase sync
+    return ok({ 
+      id: data.user.id, 
+      email: data.user.email,
+      session: data.session, // Client needs this to sync auth
+    });
   } catch (error) {
     return serverError("Login failed", error);
   }

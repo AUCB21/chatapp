@@ -46,8 +46,8 @@ function getSupabaseInstance(): SupabaseClient | null {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      storage: typeof window !== 'undefined' ? window.localStorage : undefined,
-      storageKey: 'sb-auth-token',
+      detectSessionInUrl: true,
+      flowType: 'pkce',
     },
     realtime: {
       params: {
@@ -56,14 +56,19 @@ function getSupabaseInstance(): SupabaseClient | null {
     },
   });
   
-  // Log auth state
+  // The client should auto-load session from localStorage on creation
+  // Log the actual session state after initialization
   supabaseInstance.auth.getSession().then(({ data: { session }, error }) => {
     if (error) {
       console.error('[Supabase] Session error:', error);
     } else if (session) {
       console.log('[Supabase] Client initialized with session:', session.user.email);
     } else {
-      console.warn('[Supabase] Client initialized WITHOUT session');
+      console.warn('[Supabase] Client initialized WITHOUT session - Realtime will not work!');
+      console.warn('[Supabase] Check localStorage for auth tokens');
+      // Check if there's a token in localStorage
+      const keys = Object.keys(localStorage).filter(k => k.includes('supabase') || k.includes('sb-'));
+      console.log('[Supabase] Auth-related localStorage keys:', keys);
     }
   });
   

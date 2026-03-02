@@ -26,7 +26,12 @@ export async function POST(req: NextRequest) {
 
     // session is null when email confirmation is required
     const confirmed = data.session !== null;
-    return ok({ confirmed, email: data.user?.email });
+    return ok({ 
+      confirmed, 
+      email: data.user?.email,
+      id: data.user?.id,
+      session: data.session, // Client needs this to sync auth
+    });
   } catch (error) {
     return serverError("Registration failed", error);
   }

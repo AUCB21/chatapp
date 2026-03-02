@@ -1,15 +1,19 @@
 -- ============================================================
--- Realtime Publication Setup
+-- Realtime Permissions Setup
 -- ============================================================
--- This adds tables to the supabase_realtime publication so that
--- postgres_changes events are broadcast to subscribed clients.
--- Without this, Realtime will show SUBSCRIBED but callbacks won't fire.
+-- Grant SELECT to supabase_realtime_admin so the Realtime server
+-- can read changes and broadcast them to subscribed clients.
+-- This is required for postgres_changes events to fire.
 
--- Add all tables that need real-time updates to the publication
-ALTER PUBLICATION supabase_realtime ADD TABLE chats;
-ALTER PUBLICATION supabase_realtime ADD TABLE memberships;
-ALTER PUBLICATION supabase_realtime ADD TABLE messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE invitations;
+-- Grant SELECT permissions to Realtime role
+GRANT SELECT ON chats TO supabase_realtime_admin;
+GRANT SELECT ON memberships TO supabase_realtime_admin;
+GRANT SELECT ON messages TO supabase_realtime_admin;
+GRANT SELECT ON invitations TO supabase_realtime_admin;
 
--- Verify publication (for debugging)
--- You can run: SELECT * FROM pg_publication_tables WHERE pubname = 'supabase_realtime';
+-- Also grant USAGE on sequences for complete access
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO supabase_realtime_admin;
+
+-- Verify setup (for debugging)
+-- SELECT * FROM pg_publication_tables WHERE pubname = 'supabase_realtime';
+-- SELECT grantee, privilege_type FROM information_schema.role_table_grants WHERE table_name = 'messages';

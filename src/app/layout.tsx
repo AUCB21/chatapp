@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
+import { SessionSync } from "@/components/SessionSync";
 
 export const metadata: Metadata = {
   title: "Chat App",
@@ -11,6 +12,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body className="bg-neutral-50 text-neutral-900 antialiased">
+        <SessionSync />
         {children}
       </body>
     </html>
