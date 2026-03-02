@@ -11,6 +11,15 @@ export const createChatSchema = z.object({
 
 export const sendMessageSchema = z.object({
   content: z.string().min(1).max(4000).trim(),
+  parentId: z.string().uuid().optional(),
+});
+
+export const editMessageSchema = z.object({
+  content: z.string().min(1).max(4000).trim(),
+});
+
+export const reactionSchema = z.object({
+  emoji: z.string().min(1).max(8), // single emoji
 });
 
 export const addMemberSchema = z.object({

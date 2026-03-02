@@ -1,11 +1,14 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
-import type { Chat, Message, MemberRole } from "../db/schema";
+import type { Chat, Message, MemberRole, Reaction } from "../db/schema";
 
 // --- Types ---
 
 export type ChatRole = MemberRole | "pending";
 type ChatWithRole = Chat & { role: ChatRole };
+
+/** Grouped reactions for a message: emoji → { count, users[] } */
+export type ReactionGroup = Record<string, { count: number; users: string[] }>;
 
 export interface ChatState {
   // Data
@@ -13,6 +16,7 @@ export interface ChatState {
   activeChatId: string | null;
   messages: Record<string, Message[]>; // keyed by chatId
   memberships: Record<string, ChatRole>; // chatId → user's role (incl. "pending")
+  reactions: Record<string, Reaction[]>; // keyed by chatId
 
   // Loading / error per-resource
   loading: {
@@ -29,6 +33,10 @@ export interface ChatState {
   setActiveChat: (chatId: string) => void;
   setMessages: (chatId: string, messages: Message[]) => void;
   appendMessage: (chatId: string, message: Message) => void;
+  updateMessage: (chatId: string, messageId: string, updates: Partial<Message>) => void;
+  setReactions: (chatId: string, reactions: Reaction[]) => void;
+  addReaction: (chatId: string, reaction: Reaction) => void;
+  removeReaction: (chatId: string, reactionId: string) => void;
   setMembership: (chatId: string, role: ChatRole) => void;
   removeMembership: (chatId: string) => void;
   setLoading: (key: keyof ChatState["loading"], value: boolean) => void;
@@ -43,6 +51,7 @@ const initialState = {
   activeChatId: null,
   messages: {},
   memberships: {},
+  reactions: {},
   loading: { chats: false, messages: false },
   error: { chats: null, messages: null },
 };
@@ -94,6 +103,64 @@ export const useChatStore = create<ChatState>()(
           "appendMessage"
         ),
 
+      updateMessage: (chatId, messageId, updates) =>
+        set(
+          (state) => {
+            const existing = state.messages[chatId];
+            if (!existing) return state;
+            return {
+              messages: {
+                ...state.messages,
+                [chatId]: existing.map((m) =>
+                  m.id === messageId ? { ...m, ...updates } : m
+                ),
+              },
+            };
+          },
+          false,
+          "updateMessage"
+        ),
+
+      setReactions: (chatId, reactions) =>
+        set(
+          (state) => ({
+            reactions: { ...state.reactions, [chatId]: reactions },
+          }),
+          false,
+          "setReactions"
+        ),
+
+      addReaction: (chatId, reaction) =>
+        set(
+          (state) => {
+            const existing = state.reactions[chatId] ?? [];
+            if (existing.some((r) => r.id === reaction.id)) return state;
+            return {
+              reactions: {
+                ...state.reactions,
+                [chatId]: [...existing, reaction],
+              },
+            };
+          },
+          false,
+          "addReaction"
+        ),
+
+      removeReaction: (chatId, reactionId) =>
+        set(
+          (state) => {
+            const existing = state.reactions[chatId] ?? [];
+            return {
+              reactions: {
+                ...state.reactions,
+                [chatId]: existing.filter((r) => r.id !== reactionId),
+              },
+            };
+          },
+          false,
+          "removeReaction"
+        ),
+
       setMembership: (chatId, role) =>
         set(
           (state) => ({
@@ -108,9 +175,11 @@ export const useChatStore = create<ChatState>()(
           (state) => {
             const { [chatId]: _, ...rest } = state.memberships;
             const { [chatId]: __, ...restMessages } = state.messages;
+            const { [chatId]: ___, ...restReactions } = state.reactions;
             return {
               memberships: rest,
               messages: restMessages,
+              reactions: restReactions,
               chats: state.chats.filter((c) => c.id !== chatId),
               activeChatId:
                 state.activeChatId === chatId ? null : state.activeChatId,
@@ -143,6 +212,7 @@ export const useChatStore = create<ChatState>()(
 // --- Selectors (memoization-friendly, use outside store definition) ---
 
 const EMPTY_MESSAGES: Message[] = [];
+const EMPTY_REACTIONS: Reaction[] = [];
 
 export const selectActiveChat = (state: ChatState) =>
   state.chats.find((c) => c.id === state.activeChatId) ?? null;
@@ -151,6 +221,26 @@ export const selectActiveMessages = (state: ChatState) =>
   state.activeChatId
     ? (state.messages[state.activeChatId] ?? EMPTY_MESSAGES)
     : EMPTY_MESSAGES;
+
+export const selectActiveReactions = (state: ChatState) =>
+  state.activeChatId
+    ? (state.reactions[state.activeChatId] ?? EMPTY_REACTIONS)
+    : EMPTY_REACTIONS;
+
+/** Group reactions by messageId → emoji → { count, users[] } */
+export function groupReactions(
+  reactions: Reaction[]
+): Record<string, ReactionGroup> {
+  const grouped: Record<string, ReactionGroup> = {};
+  for (const r of reactions) {
+    if (!grouped[r.messageId]) grouped[r.messageId] = {};
+    const msgGroup = grouped[r.messageId];
+    if (!msgGroup[r.emoji]) msgGroup[r.emoji] = { count: 0, users: [] };
+    msgGroup[r.emoji].count++;
+    msgGroup[r.emoji].users.push(r.userId);
+  }
+  return grouped;
+}
 
 export const selectUserRole = (chatId: string) => (state: ChatState) =>
   state.memberships[chatId] ?? null;

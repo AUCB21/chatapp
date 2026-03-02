@@ -49,6 +49,17 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
   const callStatusRef = useRef(callStatus);
   callStatusRef.current = callStatus;
 
+  // Refs for state setters to avoid stale closures in peer connection listeners
+  const setCallStatusRef = useRef(setCallStatus);
+  setCallStatusRef.current = setCallStatus;
+  const setErrorRef = useRef(setError);
+  setErrorRef.current = setError;
+
+  // Debug: log callStatus changes
+  useEffect(() => {
+    console.log("[Voice] callStatus changed to:", callStatus);
+  }, [callStatus]);
+
   // Check WebRTC support
   useEffect(() => {
     if (!isWebRTCSupported()) {
@@ -136,12 +147,13 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
       pc.onconnectionstatechange = () => {
         console.log("[Voice] Connection state:", pc.connectionState);
         if (pc.connectionState === "connected") {
-          setCallStatus("connected");
+          console.log("[Voice] Setting callStatus to connected via ref");
+          setCallStatusRef.current("connected");
         } else if (
           pc.connectionState === "failed" ||
           pc.connectionState === "disconnected"
         ) {
-          setError("Connection lost");
+          setErrorRef.current("Connection lost");
           cleanupCall();
         }
       };
@@ -204,12 +216,25 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
       payload: Extract<VoiceSignalType, { type: "call-answer" }>
     ) => {
       if (!peerConnectionRef.current) return;
-      await peerConnectionRef.current.setRemoteDescription(
-        new RTCSessionDescription(payload.answer)
-      );
-      setCallStatus("connected");
+      
+      // Check if we're in the right state to receive an answer
+      if (peerConnectionRef.current.signalingState !== "have-local-offer") {
+        console.warn("[Voice] Ignoring answer - not in have-local-offer state:", peerConnectionRef.current.signalingState);
+        return;
+      }
+      
+      try {
+        await peerConnectionRef.current.setRemoteDescription(
+          new RTCSessionDescription(payload.answer)
+        );
+        setCallStatus("connected");
+      } catch (err) {
+        console.error("[Voice] Failed to set remote answer:", err);
+        setError("Failed to complete call setup");
+        cleanupCall();
+      }
     },
-    []
+    [cleanupCall]
   );
 
   const handleIceCandidate = useCallback(
@@ -217,9 +242,21 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
       payload: Extract<VoiceSignalType, { type: "ice-candidate" }>
     ) => {
       if (!peerConnectionRef.current) return;
-      await peerConnectionRef.current.addIceCandidate(
-        new RTCIceCandidate(payload.candidate)
-      );
+      
+      // Only add ICE candidates if remote description is set
+      if (!peerConnectionRef.current.remoteDescription) {
+        console.warn("[Voice] Ignoring ICE candidate - no remote description yet");
+        return;
+      }
+      
+      try {
+        await peerConnectionRef.current.addIceCandidate(
+          new RTCIceCandidate(payload.candidate)
+        );
+      } catch (err) {
+        console.error("[Voice] Failed to add ICE candidate:", err);
+        // Don't fail the entire call for ICE candidate errors
+      }
     },
     []
   );
