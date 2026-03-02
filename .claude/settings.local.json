@@ -6,7 +6,9 @@
       "Bash(npx drizzle-kit generate --custom --name=rls_policies)",
       "Bash(npx drizzle-kit generate --custom --name=invitations_rls)",
       "Bash(npx drizzle-kit generate --custom --name=realtime_publication)",
-      "Bash(ls -la src/db/migrations/*.sql)"
+      "Bash(ls -la src/db/migrations/*.sql)",
+      "Bash(xargs wc -l)",
+      "Bash(xargs grep -l \"export\")"
     ]
   }
 }
