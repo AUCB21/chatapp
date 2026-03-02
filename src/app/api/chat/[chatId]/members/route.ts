@@ -33,8 +33,8 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     await addMember(parsed.data.userId, chatId, parsed.data.role);
     return created({ userId: parsed.data.userId, role: parsed.data.role });
-  } catch {
-    return serverError();
+  } catch (error) {
+    return serverError("Failed to add member", error);
   }
 }
 
@@ -62,8 +62,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
     await addMember(parsed.data.userId, chatId, parsed.data.role);
     return ok({ userId: parsed.data.userId, role: parsed.data.role });
-  } catch {
-    return serverError();
+  } catch (error) {
+    return serverError("Failed to update member role", error);
   }
 }
 
@@ -93,7 +93,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
 
     await removeMember(parsed.data.userId, chatId);
     return ok({ removed: parsed.data.userId });
-  } catch {
-    return serverError();
+  } catch (error) {
+    return serverError("Failed to remove member", error);
   }
 }

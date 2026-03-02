@@ -37,8 +37,8 @@ export async function POST(_req: NextRequest, { params }: Params) {
     }
 
     return ok({ chatId });
-  } catch {
-    return serverError();
+  } catch (error) {
+    return serverError("Failed to accept invitation", error);
   }
 }
 
@@ -61,7 +61,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     }
 
     return ok({ declined: true });
-  } catch {
-    return serverError();
+  } catch (error) {
+    return serverError("Failed to decline invitation", error);
   }
 }

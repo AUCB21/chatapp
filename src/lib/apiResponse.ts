@@ -22,5 +22,13 @@ export const badRequest = (message = "Bad request") =>
 export const notFound = (message = "Not found") =>
   NextResponse.json({ error: message }, { status: 404 });
 
-export const serverError = (message = "Internal server error") =>
-  NextResponse.json({ error: message }, { status: 500 });
+export const serverError = (message = "Internal server error", error?: unknown) => {
+  // Log error details to server console for debugging
+  if (error) {
+    console.error("[API Error]", error);
+    if (error instanceof Error) {
+      console.error("Stack:", error.stack);
+    }
+  }
+  return NextResponse.json({ error: message }, { status: 500 });
+};

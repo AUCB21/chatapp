@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   try {
     const { chat } = await createChatWithInvitation(chatName, user.id, invitedEmail);
     return created({ chatId: chat.id, chatName: chat.name });
-  } catch {
-    return serverError();
+  } catch (error) {
+    return serverError("Failed to create invitation", error);
   }
 }

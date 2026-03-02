@@ -24,7 +24,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     if (!chat) return notFound();
 
     return ok({ ...chat, role });
-  } catch {
-    return serverError();
+  } catch (error) {
+    return serverError("Failed to fetch chat details", error);
   }
 }

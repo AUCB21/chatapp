@@ -11,7 +11,7 @@ export async function POST() {
   try {
     await supabase.auth.signOut();
     return ok({ loggedOut: true });
-  } catch {
-    return serverError();
+  } catch (error) {
+    return serverError("Logout failed", error);
   }
 }

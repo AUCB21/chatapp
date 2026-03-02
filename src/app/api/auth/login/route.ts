@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     if (error) return unauthorized(error.message);
 
     return ok({ id: data.user.id, email: data.user.email });
-  } catch {
-    return serverError();
+  } catch (error) {
+    return serverError("Login failed", error);
   }
 }

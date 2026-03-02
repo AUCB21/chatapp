@@ -32,8 +32,8 @@ export async function GET() {
       }));
 
     return ok([...memberChats, ...pendingChats]);
-  } catch {
-    return serverError();
+  } catch (error) {
+    return serverError("Failed to fetch chats", error);
   }
 }
 
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   try {
     const chat = await createChat(parsed.data.name, user.id);
     return created(chat);
-  } catch {
-    return serverError();
+  } catch (error) {
+    return serverError("Failed to create chat", error);
   }
 }

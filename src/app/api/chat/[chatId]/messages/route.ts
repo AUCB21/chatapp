@@ -31,8 +31,8 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
     const messages = await getMessages(user.id, chatId);
     return ok(messages);
-  } catch {
-    return serverError();
+  } catch (error) {
+    return serverError("Failed to fetch messages", error);
   }
 }
 
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const message = await createMessage(user.id, chatId, parsed.data.content);
     return created(message);
-  } catch {
-    return serverError();
+  } catch (error) {
+    return serverError("Failed to send message", error);
   }
 }
