@@ -64,3 +64,25 @@ CREATE POLICY "messages_insert_write_members" ON messages
         AND role IN ('write', 'admin')
     )
   );
+
+-- ============================================================
+-- 3. Performance Indexes for RLS Policies
+-- ============================================================
+
+-- Index for memberships lookups by user_id (used in all RLS policies)
+CREATE INDEX IF NOT EXISTS idx_memberships_user_id ON memberships(user_id);
+
+-- Index for memberships lookups by chat_id (used in admin checks and joins)
+CREATE INDEX IF NOT EXISTS idx_memberships_chat_id ON memberships(chat_id);
+
+-- Composite index for user+role checks (used in messages insert policy)
+CREATE INDEX IF NOT EXISTS idx_memberships_user_role ON memberships(user_id, role);
+
+-- Index for messages by chat_id (used in SELECT policies)
+CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages(chat_id);
+
+-- Index for messages by user_id (useful for user-specific queries)
+CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id);
+
+-- Composite index for chat+timestamp (useful for ordered message fetching)
+CREATE INDEX IF NOT EXISTS idx_messages_chat_created ON messages(chat_id, created_at);

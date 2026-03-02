@@ -34,6 +34,14 @@ Manually run the RLS policies in Supabase SQL Editor:
 - Paste into Supabase SQL Editor
 - Execute
 
+**Important**: If you've already applied RLS policies before, run the performance update:
+- Open `src/db/migrations/update_rls_performance.sql`
+- Copy contents
+- Paste into Supabase SQL Editor
+- Execute
+
+This update wraps `auth.uid()` calls in SELECT subqueries to prevent per-row re-evaluation, significantly improving query performance on large tables.
+
 ### 3. Verify Database Tables
 
 Check that these tables exist in Supabase:
