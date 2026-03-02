@@ -94,12 +94,7 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
     if (!chatId || !user) return;
 
     console.log('[Voice] Setting up voice channel for chat:', chatId);
-    const channel = supabase.channel(`voice:${chatId}`, {
-      config: {
-        broadcast: { self: false },
-        presence: { key: '' },
-      },
-    });
+    const channel = supabase.channel(`voice:${chatId}`);
     
     channel
       .on('broadcast', { event: 'voice-signal' }, async ({ payload }: { payload: VoiceSignalType }) => {

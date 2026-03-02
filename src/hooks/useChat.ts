@@ -155,12 +155,7 @@ export function useChat(): UseChatReturn {
       }
 
       const channel = supabase
-        .channel(`chat:${activeChatId}`, {
-          config: {
-            broadcast: { self: false },
-            presence: { key: '' },
-          },
-        })
+        .channel(`messages:${activeChatId}`)
         .on(
           "postgres_changes",
           {
@@ -184,7 +179,7 @@ export function useChat(): UseChatReturn {
           }
         )
         .subscribe((status, err) => {
-          console.log(`[Realtime] Messages channel chat:${activeChatId} →`, status, err ?? "");
+          console.log(`[Realtime] Messages channel messages:${activeChatId} →`, status, err ?? "");
           if (err) {
             console.error(`[Realtime] Messages subscription error:`, err);
           }
