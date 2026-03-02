@@ -93,13 +93,20 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
   const setupChannel = useCallback(() => {
     if (!chatId || !user) return;
 
-    const channel = supabase.channel(`voice:${chatId}`);
+    console.log('[Voice] Setting up voice channel for chat:', chatId);
+    const channel = supabase.channel(`voice:${chatId}`, {
+      config: {
+        broadcast: { self: false },
+        presence: { key: '' },
+      },
+    });
     
     channel
       .on('broadcast', { event: 'voice-signal' }, async ({ payload }: { payload: VoiceSignalType }) => {
         // Ignore our own signals
         if (payload.from === user.id) return;
 
+        console.log('[Voice] Received signal:', payload.type, 'from:', payload.from);
         try {
           switch (payload.type) {
             case 'call-offer':
@@ -123,7 +130,12 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
           setError(err instanceof Error ? err.message : 'Failed to process call signal');
         }
       })
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log(`[Voice] Channel voice:${chatId} →`, status, err ?? "");
+        if (err) {
+          console.error(`[Voice] Subscription error:`, err);
+        }
+      });
 
     channelRef.current = channel;
   }, [chatId, user]);
@@ -364,11 +376,15 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
   };
 
   // Setup channel when chat opens (subscribe to all voice signals)
+  // Only set up when component actually mounts and user is ready
   useEffect(() => {
-    if (chatId && user) {
-      setupChannel();
-    }
+    if (!chatId || !user) return;
+    
+    console.log('[Voice] useEffect triggered for chat:', chatId);
+    setupChannel();
+    
     return () => {
+      console.log('[Voice] Cleaning up for chat:', chatId);
       cleanup();
     };
   }, [chatId, user, setupChannel, cleanup]);

@@ -11,15 +11,13 @@ let supabaseInstance: SupabaseClient | null = null;
 
 /**
  * Get or create the Supabase client instance.
- * Lazily initialized on first access in the browser.
- * 
- * This function approach avoids the Proxy overhead while still
- * preventing initialization during the Next.js build process.
+ * Lazily initialized on first use in the browser.
+ * Safe to call during SSR - returns null which components should handle.
  */
-export function getSupabase(): SupabaseClient {
-  // Only initialize in the browser
+function getSupabaseInstance(): SupabaseClient | null {
+  // During SSR or build, return null
   if (typeof window === 'undefined') {
-    throw new Error('Supabase client can only be used in the browser');
+    return null;
   }
 
   // Return cached instance if already created
@@ -31,7 +29,7 @@ export function getSupabase(): SupabaseClient {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error(
+    console.error(
       "Missing Supabase environment variables. " +
       "Check your Supabase project's API settings to find these values: " +
       "https://supabase.com/dashboard/project/_/settings/api\n" +
@@ -39,21 +37,30 @@ export function getSupabase(): SupabaseClient {
       "- NEXT_PUBLIC_SUPABASE_URL\n" +
       "- NEXT_PUBLIC_SUPABASE_ANON_KEY"
     );
+    return null;
   }
 
   supabaseInstance = createBrowserClient(supabaseUrl, supabaseAnonKey);
+  console.log('[Supabase] Client initialized');
   return supabaseInstance;
 }
 
-// Export a lazy-initialized client using a Proxy
-// This ensures the client is only created when actually accessed
-export const supabase = new Proxy({} as SupabaseClient, {
-  get(target, prop) {
-    // Only initialize in browser when accessed
-    if (typeof window === 'undefined') {
-      throw new Error('Supabase client can only be used in the browser');
-    }
-    const client = getSupabase();
-    return (client as any)[prop];
+/**
+ * Get the Supabase client for use in components.
+ * Returns the singleton instance, creating it on first call.
+ * This function-based export ensures lazy initialization.
+ */
+export function getSupabase(): SupabaseClient {
+  const instance = getSupabaseInstance();
+  if (!instance) {
+    throw new Error('Supabase client can only be used in the browser');
   }
-});
+  return instance;
+}
+
+/**
+ * Direct export of Supabase client.
+ * Calls getSupabase() immediately if in browser, otherwise provides empty object for build.
+ * Components using this should be client-side only ("use client").
+ */
+export const supabase = (typeof window !== 'undefined' && getSupabaseInstance()) || ({} as SupabaseClient);

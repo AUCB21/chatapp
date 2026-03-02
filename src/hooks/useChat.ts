@@ -155,7 +155,12 @@ export function useChat(): UseChatReturn {
       }
 
       const channel = supabase
-        .channel(`chat:${activeChatId}`)
+        .channel(`chat:${activeChatId}`, {
+          config: {
+            broadcast: { self: false },
+            presence: { key: '' },
+          },
+        })
         .on(
           "postgres_changes",
           {
@@ -165,6 +170,7 @@ export function useChat(): UseChatReturn {
             filter: `chat_id=eq.${activeChatId}`,
           },
           (payload) => {
+            console.log('[Realtime] Message received:', payload);
             // Realtime delivers raw Postgres rows (snake_case), not Drizzle-mapped camelCase.
             const raw = payload.new as Record<string, unknown>;
             const incoming: Message = {
@@ -178,7 +184,10 @@ export function useChat(): UseChatReturn {
           }
         )
         .subscribe((status, err) => {
-          console.log(`[Realtime] chat:${activeChatId} →`, status, err ?? "");
+          console.log(`[Realtime] Messages channel chat:${activeChatId} →`, status, err ?? "");
+          if (err) {
+            console.error(`[Realtime] Messages subscription error:`, err);
+          }
         });
 
       channelRef.current = channel;
