@@ -129,9 +129,9 @@ export function useChat(): UseChatReturn {
         if (status === "SUBSCRIBED") {
           console.log("[Realtime] chat-list-changes: subscribed");
         } else if (status === "CHANNEL_ERROR") {
-          console.error("[Realtime] chat-list-changes error:", err);
+          console.warn("[Realtime] chat-list-changes: channel error (will retry)", err ?? "");
         } else if (status === "TIMED_OUT") {
-          console.warn("[Realtime] chat-list-changes timed out");
+          console.warn("[Realtime] chat-list-changes: timed out (will retry)");
         }
       });
 
@@ -296,9 +296,9 @@ export function useChat(): UseChatReturn {
           if (status === "SUBSCRIBED") {
             console.log(`[Realtime] messages:${activeChatId}: subscribed`);
           } else if (status === "CHANNEL_ERROR") {
-            console.error(`[Realtime] messages:${activeChatId} error:`, err);
+            console.warn(`[Realtime] messages:${activeChatId}: channel error (will retry)`, err ?? "");
           } else if (status === "TIMED_OUT") {
-            console.warn(`[Realtime] messages:${activeChatId} timed out`);
+            console.warn(`[Realtime] messages:${activeChatId}: timed out (will retry)`);
           }
         });
 
