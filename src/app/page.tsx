@@ -43,8 +43,27 @@ export default function ChatPage() {
     declineChat,
   } = useChat();
 
-  const { shareStatus, presenter } = useScreenShare(activeChatId);
-  const { callStatus } = useVoiceCall(activeChatId);
+  const {
+    shareStatus,
+    isIncomingShare,
+    presenter,
+    error: shareError,
+    startSharing,
+    stopSharing,
+    rejectShare,
+  } = useScreenShare(activeChatId);
+  const {
+    callStatus,
+    isMuted,
+    isIncomingCall,
+    caller,
+    error: callError,
+    startCall,
+    answerCall,
+    rejectCall,
+    hangUp,
+    toggleMute,
+  } = useVoiceCall(activeChatId);
   const { onlineUsers, typingUsers, startTyping, stopTyping } =
     usePresence(activeChatId);
 
@@ -279,7 +298,22 @@ export default function ChatPage() {
               isPending={!!isPending}
               onlineUsers={onlineUsers}
               callStatus={callStatus}
+              isMuted={isMuted}
+              isIncomingCall={isIncomingCall}
+              caller={caller}
+              callError={callError}
               canWrite={canWrite}
+              onStartCall={startCall}
+              onAnswerCall={answerCall}
+              onRejectCall={rejectCall}
+              onHangUp={hangUp}
+              onToggleMute={toggleMute}
+              shareStatus={shareStatus}
+              isIncomingShare={isIncomingShare}
+              presenter={presenter}
+              shareError={shareError}
+              onStartSharing={startSharing}
+              onStopSharing={stopSharing}
               onOpenSidebar={() => setSidebarOpen(true)}
             />
 
@@ -489,7 +523,7 @@ export default function ChatPage() {
       <ScreenShareViewer
         isActive={shareStatus === "viewing"}
         presenterName={presenter?.name || null}
-        onClose={() => {}}
+        onClose={rejectShare}
       />
     </div>
   );

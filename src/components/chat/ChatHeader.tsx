@@ -11,7 +11,22 @@ interface ChatHeaderProps {
   isPending: boolean;
   onlineUsers: PresenceUser[];
   callStatus: VoiceCallStatus;
+  isMuted: boolean;
+  isIncomingCall: boolean;
+  caller: CallerInfo | null;
+  callError: string | null;
   canWrite: boolean;
+  onStartCall: () => Promise<void>;
+  onAnswerCall: () => Promise<void>;
+  onRejectCall: () => void;
+  onHangUp: () => void;
+  onToggleMute: () => void;
+  shareStatus: ScreenShareStatus;
+  isIncomingShare: boolean;
+  presenter: PresenterInfo | null;
+  shareError: string | null;
+  onStartSharing: (options: import("@/lib/webrtc").ScreenShareOptions) => Promise<void>;
+  onStopSharing: () => void;
   onOpenSidebar: () => void;
 }
 
@@ -20,7 +35,22 @@ export default function ChatHeader({
   isPending,
   onlineUsers,
   callStatus,
+  isMuted,
+  isIncomingCall,
+  caller,
+  callError,
   canWrite,
+  onStartCall,
+  onAnswerCall,
+  onRejectCall,
+  onHangUp,
+  onToggleMute,
+  shareStatus,
+  isIncomingShare,
+  presenter,
+  shareError,
+  onStartSharing,
+  onStopSharing,
   onOpenSidebar,
 }: ChatHeaderProps) {
   return (
@@ -69,14 +99,28 @@ export default function ChatHeader({
       <div className="flex items-center gap-2">
         <VoiceCallControls
           chatId={chat.id}
-          chatName={chat.name}
           canCall={!isPending && canWrite}
+          callStatus={callStatus}
+          isMuted={isMuted}
+          isIncomingCall={isIncomingCall}
+          caller={caller}
+          error={callError}
+          onStartCall={onStartCall}
+          onAnswerCall={onAnswerCall}
+          onRejectCall={onRejectCall}
+          onHangUp={onHangUp}
+          onToggleMute={onToggleMute}
         />
         <ScreenShareControls
           chatId={chat.id}
-          chatName={chat.name}
           canShare={!isPending && canWrite}
           isInCall={callStatus === "connected"}
+          shareStatus={shareStatus}
+          isIncomingShare={isIncomingShare}
+          presenter={presenter}
+          error={shareError}
+          onStartSharing={onStartSharing}
+          onStopSharing={onStopSharing}
         />
       </div>
     </div>

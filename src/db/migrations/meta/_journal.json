@@ -43,6 +43,13 @@
       "when": 1772491267299,
       "tag": "0005_first_ultragirl",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1773273600000,
+      "tag": "0006_group_call_sessions",
+      "breakpoints": true
     }
   ]
 }

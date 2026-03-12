@@ -19,7 +19,7 @@ interface UseVoiceCallReturn {
   isIncomingCall: boolean;
   caller: CallerInfo | null;
   error: string | null;
-  startCall: (targetUserId: string, targetUserName: string) => Promise<void>;
+  startCall: () => Promise<void>;
   answerCall: () => Promise<void>;
   rejectCall: () => void;
   hangUp: () => void;
@@ -41,7 +41,8 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
-  const targetUserIdRef = useRef<string | null>(null);
+  const callIdRef = useRef<string | null>(null);
+  const isHostRef = useRef(false);
 
   // Refs for values accessed inside signal handlers (avoids stale closures)
   const userIdRef = useRef(userId);
@@ -94,8 +95,62 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
     setIsIncomingCall(false);
     setCaller(null);
     setIsMuted(false);
-    targetUserIdRef.current = null;
+    callIdRef.current = null;
+    isHostRef.current = false;
   }, []);
+
+  const syncCallSession = useCallback(async () => {
+    if (!chatId || !userId) return;
+
+    try {
+      const res = await fetch(`/api/chat/${chatId}/call`);
+      if (!res.ok) return;
+
+      const json = await res.json();
+      const activeCall = json?.data?.activeCall ?? null;
+      const participants = (json?.data?.participants ?? []) as Array<{
+        userId: string;
+        state: "joined" | "left";
+      }>;
+
+      if (!activeCall) {
+        callIdRef.current = null;
+        isHostRef.current = false;
+        if (callStatusRef.current !== "idle") {
+          setCallStatus("idle");
+          setIsIncomingCall(false);
+          setCaller(null);
+        }
+        return;
+      }
+
+      callIdRef.current = activeCall.id;
+      isHostRef.current = activeCall.createdByUserId === userId;
+
+      const meJoined = participants.some(
+        (participant) => participant.userId === userId && participant.state === "joined"
+      );
+
+      if (activeCall.status === "ringing") {
+        if (activeCall.createdByUserId === userId) {
+          setCallStatus("calling");
+          setIsIncomingCall(false);
+          setCaller(null);
+        } else if (!meJoined) {
+          setIsIncomingCall(true);
+          setCaller({ id: activeCall.createdByUserId, name: "Incoming call" });
+          setCallStatus("ringing");
+        }
+      }
+
+      if (activeCall.status === "active" && meJoined) {
+        setIsIncomingCall(false);
+        setCallStatus("connected");
+      }
+    } catch {
+      // Non-fatal sync path
+    }
+  }, [chatId, userId]);
 
   // --- Channel-only cleanup (used only when unmounting or chatId changes) ---
   const cleanupChannel = useCallback(() => {
@@ -127,7 +182,7 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
   const setupPeerConnectionListeners = useCallback(
     (pc: RTCPeerConnection) => {
       pc.onicecandidate = (event) => {
-        if (event.candidate && userIdRef.current && targetUserIdRef.current) {
+        if (event.candidate && userIdRef.current) {
           sendSignal({
             type: "ice-candidate",
             from: userIdRef.current,
@@ -190,7 +245,6 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
       setCaller({ id: payload.from, name: payload.fromName });
       setIsIncomingCall(true);
       setCallStatus("ringing");
-      targetUserIdRef.current = payload.from;
 
       if (!peerConnectionRef.current) {
         const pc = createPeerConnection();
@@ -310,6 +364,29 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
 
     channel
       .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "call_sessions",
+          filter: `chat_id=eq.${chatId}`,
+        },
+        () => {
+          syncCallSession();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "call_participants",
+        },
+        () => {
+          syncCallSession();
+        }
+      )
+      .on(
         "broadcast",
         { event: "voice-signal" },
         async ({ payload }: { payload: VoiceSignalType }) => {
@@ -337,24 +414,50 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
       });
 
     channelRef.current = channel;
+    syncCallSession();
 
     return () => {
       console.log("[Voice] Cleaning up channel for chat:", chatId);
       cleanupCall();
       cleanupChannel();
     };
-  }, [chatId, userId, cleanupCall, cleanupChannel]);
+  }, [chatId, userId, cleanupCall, cleanupChannel, syncCallSession]);
 
   // --- Start a call ---
   const startCall = useCallback(
-    async (targetUserId: string, _targetUserName: string) => {
+    async () => {
       if (!userId || !chatId) return;
 
       setError(null);
-      setCallStatus("calling");
-      targetUserIdRef.current = targetUserId;
 
       try {
+        const createRes = await fetch(`/api/chat/${chatId}/call`, {
+          method: "POST",
+        });
+        if (!createRes.ok) {
+          const failure = await createRes.json().catch(() => null);
+          throw new Error(
+            failure?.error || "Failed to start call session"
+          );
+        }
+
+        const created = await createRes.json();
+        const activeCallId = created?.data?.activeCall?.id as string | undefined;
+        if (!activeCallId) throw new Error("Call session id missing");
+
+        callIdRef.current = activeCallId;
+        isHostRef.current = true;
+
+        const joinRes = await fetch(`/api/chat/${chatId}/call/${activeCallId}/participants`, {
+          method: "POST",
+        });
+        if (!joinRes.ok) {
+          const failure = await joinRes.json().catch(() => null);
+          throw new Error(failure?.error || "Failed to join started call");
+        }
+
+        setCallStatus("calling");
+
         const stream = await requestMicrophoneAccess();
         localStreamRef.current = stream;
 
@@ -384,12 +487,22 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
 
   // --- Answer an incoming call ---
   const answerCall = useCallback(async () => {
-    if (!userId || !peerConnectionRef.current) return;
+    if (!userId || !peerConnectionRef.current || !chatId || !callIdRef.current) {
+      return;
+    }
 
     setError(null);
     setIsIncomingCall(false);
 
     try {
+      const joinRes = await fetch(`/api/chat/${chatId}/call/${callIdRef.current}/participants`, {
+        method: "POST",
+      });
+      if (!joinRes.ok) {
+        const failure = await joinRes.json().catch(() => null);
+        throw new Error(failure?.error || "Failed to join call");
+      }
+
       const stream = await requestMicrophoneAccess();
       localStreamRef.current = stream;
 
@@ -410,30 +523,57 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
       setError(err instanceof Error ? err.message : "Failed to answer call");
       cleanupCall();
     }
-  }, [userId, sendSignal, cleanupCall]);
+  }, [userId, chatId, sendSignal, cleanupCall]);
 
   // --- Reject an incoming call ---
   const rejectCall = useCallback(() => {
     if (!userId) return;
+
+    if (chatId && callIdRef.current) {
+      fetch(`/api/chat/${chatId}/call/${callIdRef.current}/participants`, {
+        method: "DELETE",
+      }).catch(() => {});
+    }
+
     sendSignal({ type: "call-reject", from: userId });
     cleanupCall();
-  }, [userId, sendSignal, cleanupCall]);
+  }, [userId, chatId, sendSignal, cleanupCall]);
 
   // --- Hang up the call ---
   const hangUp = useCallback(() => {
     if (!userId) return;
+
+    if (chatId && callIdRef.current) {
+      if (isHostRef.current) {
+        fetch(`/api/chat/${chatId}/call`, { method: "DELETE" }).catch(() => {});
+      } else {
+        fetch(`/api/chat/${chatId}/call/${callIdRef.current}/participants`, {
+          method: "DELETE",
+        }).catch(() => {});
+      }
+    }
+
     sendSignal({ type: "call-end", from: userId });
     cleanupCall();
-  }, [userId, sendSignal, cleanupCall]);
+  }, [userId, chatId, sendSignal, cleanupCall]);
 
   // --- Toggle mute ---
   const toggleMute = useCallback(() => {
     setIsMuted((prev) => {
       const newMuted = !prev;
       toggleStreamMute(localStreamRef.current, newMuted);
+
+      if (chatId && callIdRef.current) {
+        fetch(`/api/chat/${chatId}/call/${callIdRef.current}/participants`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isMuted: newMuted }),
+        }).catch(() => {});
+      }
+
       return newMuted;
     });
-  }, []);
+  }, [chatId]);
 
   return {
     callStatus,

@@ -1,6 +1,5 @@
 "use client";
 
-import { useScreenShare } from "@/hooks/useScreenShare";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,21 +16,27 @@ import type { ScreenShareOptions } from "@/lib/webrtc";
 
 interface ScreenShareControlsProps {
   chatId: string | null;
-  chatName: string | null;
   canShare: boolean;
   isInCall: boolean; // Only show when in active call
+  shareStatus: ScreenShareStatus;
+  isIncomingShare: boolean;
+  presenter: PresenterInfo | null;
+  error: string | null;
+  onStartSharing: (options: ScreenShareOptions) => Promise<void>;
+  onStopSharing: () => void;
 }
 
-export default function ScreenShareControls({ chatId, chatName, canShare, isInCall }: ScreenShareControlsProps) {
-  const {
-    shareStatus,
-    isIncomingShare,
-    presenter,
-    error,
-    startSharing,
-    stopSharing,
-  } = useScreenShare(chatId);
-
+export default function ScreenShareControls({
+  chatId,
+  canShare,
+  isInCall,
+  shareStatus,
+  isIncomingShare,
+  presenter,
+  error,
+  onStartSharing,
+  onStopSharing,
+}: ScreenShareControlsProps) {
   const [showOptions, setShowOptions] = useState(false);
   const [resolution, setResolution] = useState<'720p' | '1080p' | '4k'>('1080p');
   const [includeAudio, setIncludeAudio] = useState(false);
@@ -60,7 +65,7 @@ export default function ScreenShareControls({ chatId, chatName, canShare, isInCa
       resolution,
       includeAudio,
     };
-    await startSharing(options);
+    await onStartSharing(options);
     setShowOptions(false);
   };
 
@@ -121,7 +126,7 @@ export default function ScreenShareControls({ chatId, chatName, canShare, isInCa
                 </span>
                 
                 <Button
-                  onClick={stopSharing}
+                  onClick={onStopSharing}
                   size="sm"
                   variant="destructive"
                   className="h-7 text-xs"
