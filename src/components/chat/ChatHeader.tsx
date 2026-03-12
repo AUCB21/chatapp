@@ -24,11 +24,10 @@ export default function ChatHeader({
   onOpenSidebar,
 }: ChatHeaderProps) {
   return (
-    <div className="h-14 md:h-16 px-3 md:px-6 border-b flex items-center gap-2 md:gap-4 shrink-0">
-      {/* Mobile back / hamburger */}
+    <div className="h-16 px-3 md:px-6 border-b flex items-center gap-3 md:gap-4 shrink-0 bg-background/90 backdrop-blur-md">
       <button
         onClick={onOpenSidebar}
-        className="md:hidden shrink-0 w-9 h-9 flex items-center justify-center rounded-full hover:bg-muted transition-colors"
+        className="md:hidden shrink-0 w-9 h-9 flex items-center justify-center rounded-full text-muted-foreground hover:bg-muted transition-colors"
         aria-label="Open sidebar"
       >
         <svg
@@ -55,27 +54,31 @@ export default function ChatHeader({
       </Avatar>
 
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold leading-tight">{chat.name}</p>
-        <p className="text-xs text-muted-foreground capitalize mt-0.5">
+        <p className="text-sm font-semibold uppercase tracking-tight leading-tight truncate">
+          {chat.name}
+        </p>
+        <p className="text-[0.625rem] text-emerald-500 font-medium uppercase tracking-widest mt-0.5">
           {isPending
             ? "Pending invitation"
             : onlineUsers.length > 0
-              ? `${onlineUsers.length} online`
+              ? "Active now"
               : chat.role}
         </p>
       </div>
 
-      <VoiceCallControls
-        chatId={chat.id}
-        chatName={chat.name}
-        canCall={!isPending && canWrite}
-      />
-      <ScreenShareControls
-        chatId={chat.id}
-        chatName={chat.name}
-        canShare={!isPending && canWrite}
-        isInCall={callStatus === "connected"}
-      />
+      <div className="flex items-center gap-2">
+        <VoiceCallControls
+          chatId={chat.id}
+          chatName={chat.name}
+          canCall={!isPending && canWrite}
+        />
+        <ScreenShareControls
+          chatId={chat.id}
+          chatName={chat.name}
+          canShare={!isPending && canWrite}
+          isInCall={callStatus === "connected"}
+        />
+      </div>
     </div>
   );
 }

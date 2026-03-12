@@ -63,6 +63,9 @@ export default function ChatPage() {
   } | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<
+    string | null
+  >(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -211,12 +214,27 @@ export default function ChatPage() {
     setSidebarOpen(false);
   };
 
+  function handleJumpToMessage(messageId: string) {
+    const target = document.querySelector(
+      `[data-message-id="${messageId}"]`
+    ) as HTMLElement | null;
+
+    if (!target) return;
+
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightedMessageId(messageId);
+
+    window.setTimeout(() => {
+      setHighlightedMessageId((prev) => (prev === messageId ? null : prev));
+    }, 1500);
+  }
+
   /* ── Render ── */
 
   return (
-    <div className="flex h-dvh bg-background overflow-hidden">
+    <div className="flex h-dvh bg-background text-foreground overflow-hidden">
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-[min(24rem,30vw)] shrink-0 border-r flex-col">
+      <aside className="hidden md:flex w-[20rem] shrink-0 border-r flex-col">
         <ChatSidebar
           chats={chats}
           activeChatId={activeChatId}
@@ -253,7 +271,7 @@ export default function ChatPage() {
       </Sheet>
 
       {/* Main panel */}
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className="flex-1 flex flex-col min-w-0 bg-background">
         {activeChat ? (
           <>
             <ChatHeader
@@ -280,7 +298,7 @@ export default function ChatPage() {
                   className="flex-1 overflow-hidden relative"
                   ref={messagesContainerRef}
                 >
-                  <ScrollArea className="h-full px-3 md:px-6 py-3 md:py-5">
+                  <ScrollArea className="h-full px-4 md:px-6 py-4 md:py-6">
                     <div className="flex flex-col gap-1">
                       {loading.messages && (
                         <p className="text-xs text-muted-foreground text-center py-4">
@@ -304,39 +322,46 @@ export default function ChatPage() {
                           : null;
 
                         return (
-                          <MessageBubble
+                          <div
                             key={msg.id}
-                            msg={msg}
-                            isOwn={isOwn}
-                            isOptimistic={msg.id.startsWith("optimistic-")}
-                            isSameUser={prevMsg?.userId === msg.userId}
-                            parentMsg={parentMsg}
-                            msgReactions={reactionGrouped[msg.id]}
-                            editContent={
-                              editingMessageId === msg.id
-                                ? editContent
-                                : null
-                            }
-                            isAnyEditing={!!editingMessageId}
-                            isPickerOpen={showEmojiPicker === msg.id}
-                            userId={user?.id || ""}
-                            canWrite={canWrite}
-                            onContextMenu={(e) =>
-                              handleContextMenu(e, msg.id, isOwn)
-                            }
-                            onEditContent={setEditContent}
-                            onSaveEdit={handleSaveEdit}
-                            onCancelEdit={() => setEditingMessageId(null)}
-                            onToggleReaction={(emoji) =>
-                              toggleReaction(msg.id, emoji)
-                            }
-                            onSetPickerOpen={(open) =>
-                              setShowEmojiPicker(open ? msg.id : null)
-                            }
-                            onReply={() =>
-                              handleReply(msg.id, msg.content)
-                            }
-                          />
+                            data-message-id={msg.id}
+                            className="scroll-mt-24"
+                          >
+                            <MessageBubble
+                              msg={msg}
+                              isOwn={isOwn}
+                              isOptimistic={msg.id.startsWith("optimistic-")}
+                              isSameUser={prevMsg?.userId === msg.userId}
+                              parentMsg={parentMsg}
+                              isHighlighted={highlightedMessageId === msg.id}
+                              msgReactions={reactionGrouped[msg.id]}
+                              editContent={
+                                editingMessageId === msg.id
+                                  ? editContent
+                                  : null
+                              }
+                              isAnyEditing={!!editingMessageId}
+                              isPickerOpen={showEmojiPicker === msg.id}
+                              userId={user?.id || ""}
+                              canWrite={canWrite}
+                              onContextMenu={(e) =>
+                                handleContextMenu(e, msg.id, isOwn)
+                              }
+                              onEditContent={setEditContent}
+                              onSaveEdit={handleSaveEdit}
+                              onCancelEdit={() => setEditingMessageId(null)}
+                              onToggleReaction={(emoji) =>
+                                toggleReaction(msg.id, emoji)
+                              }
+                              onSetPickerOpen={(open) =>
+                                setShowEmojiPicker(open ? msg.id : null)
+                              }
+                              onReply={() =>
+                                handleReply(msg.id, msg.content)
+                              }
+                              onJumpToMessage={handleJumpToMessage}
+                            />
+                          </div>
                         );
                       })}
 
@@ -367,7 +392,7 @@ export default function ChatPage() {
                   {/* Context menu */}
                   {contextMenuMsgId && (
                     <div
-                      className="fixed z-50 bg-popover border rounded-lg shadow-lg py-1 min-w-35"
+                      className="fixed z-50 bg-popover border rounded-xl shadow-lg py-1 min-w-35"
                       style={{
                         top: contextMenuPos.y,
                         left: contextMenuPos.x,
@@ -413,8 +438,8 @@ export default function ChatPage() {
                           behavior: "smooth",
                         })
                       }
-                      size="sm"
-                      className="absolute bottom-6 right-6 rounded-full shadow-lg gap-2 z-10"
+                      size="icon"
+                      className="absolute bottom-6 right-6 rounded-xl shadow-lg z-10"
                     >
                       <svg
                         className="w-4 h-4"
@@ -429,7 +454,6 @@ export default function ChatPage() {
                           d="M19.5 13.5L12 21m0 0l-7.5-7.5M12 21V3"
                         />
                       </svg>
-                      Go to bottom
                     </Button>
                   )}
                 </div>
@@ -440,6 +464,9 @@ export default function ChatPage() {
                   replyTo={replyTo}
                   onInputChange={handleInputChange}
                   onSend={handleSend}
+                  onJumpToReplyMessage={() =>
+                    replyTo && handleJumpToMessage(replyTo.id)
+                  }
                   onCancelReply={() => setReplyTo(null)}
                 />
               </>

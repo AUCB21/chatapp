@@ -13,6 +13,7 @@ interface MessageBubbleProps {
   isOptimistic: boolean;
   isSameUser: boolean;
   parentMsg: Message | null;
+  isHighlighted?: boolean;
   msgReactions?: ReactionGroup;
   /** Non-null when THIS message is being edited; holds current edit text */
   editContent: string | null;
@@ -28,6 +29,7 @@ interface MessageBubbleProps {
   onToggleReaction: (emoji: string) => void;
   onSetPickerOpen: (open: boolean) => void;
   onReply: () => void;
+  onJumpToMessage: (messageId: string) => void;
 }
 
 export default function MessageBubble({
@@ -36,6 +38,7 @@ export default function MessageBubble({
   isOptimistic,
   isSameUser,
   parentMsg,
+  isHighlighted = false,
   msgReactions,
   editContent,
   isAnyEditing,
@@ -49,29 +52,41 @@ export default function MessageBubble({
   onToggleReaction,
   onSetPickerOpen,
   onReply,
+  onJumpToMessage,
 }: MessageBubbleProps) {
   const isEditing = editContent !== null;
   const isDeleted = !!msg.deletedAt;
   const isEdited = !!msg.editedAt && !isDeleted;
 
+  function handleDoubleClick() {
+    if (!canWrite || isDeleted || isEditing) return;
+    onReply();
+  }
+
   return (
     <div
-      className={`flex ${isOwn ? "justify-end" : "justify-start"} ${
-        isSameUser ? "mt-0.5" : "mt-4"
-      } group relative`}
+      className={`w-full flex ${isOwn ? "justify-end" : "justify-start"} ${
+        isSameUser ? "mt-0.5" : "mt-5"
+      } group relative rounded-xl px-2 py-1 transition-colors duration-300 ease-out ${
+        isHighlighted ? "bg-primary/10" : "bg-transparent"
+      }`}
       onContextMenu={onContextMenu}
+      onDoubleClick={handleDoubleClick}
     >
-      <div className="max-w-[85%] md:max-w-[65%] relative">
+      <div className="max-w-[85%] md:max-w-[70%] relative">
         {/* Reply preview */}
         {parentMsg && (
-          <div
+          <button
+            type="button"
+            onClick={() => onJumpToMessage(parentMsg.id)}
             className={`text-[0.6875rem] px-3 py-1 mb-0.5 rounded-t-lg border-l-2 border-primary/40 bg-muted/50 text-muted-foreground ${
               isOwn ? "ml-auto" : ""
-            }`}
+            } hover:bg-muted transition-colors`}
+            title="Jump to original message"
           >
             ↩ {parentMsg.content.slice(0, 60)}
             {parentMsg.content.length > 60 ? "…" : ""}
-          </div>
+          </button>
         )}
 
         {/* Edit mode */}
@@ -96,12 +111,12 @@ export default function MessageBubble({
           </div>
         ) : (
           <div
-            className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
+            className={`group/message relative px-4 py-2.5 rounded-2xl text-sm leading-relaxed shadow-sm transition-all ${
               isOwn
-                ? `bg-primary text-primary-foreground rounded-br-sm ${
+                ? `bg-foreground text-background rounded-br-sm ${
                     isOptimistic ? "opacity-60" : ""
                   }`
-                : "bg-muted rounded-bl-sm"
+                : "bg-muted border border-border rounded-bl-sm"
             } ${isDeleted ? "opacity-50 italic" : ""}`}
           >
             <p className="whitespace-pre-wrap wrap-break-word">{msg.content}</p>
@@ -109,16 +124,10 @@ export default function MessageBubble({
               {isEdited && (
                 <span className="text-[0.625rem] opacity-50">edited</span>
               )}
-              <span className="text-[0.6875rem] opacity-70">
-                {new Date(msg.createdAt).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </span>
               {isOwn && !isOptimistic && !isDeleted && (
                 <span className="text-[0.6875rem]">
                   {msg.status === "read" ? (
-                    <span className="text-blue-400">✓✓</span>
+                    <span className="text-primary">✓✓</span>
                   ) : msg.status === "delivered" ? (
                     <span className="opacity-70">✓✓</span>
                   ) : (
@@ -126,6 +135,16 @@ export default function MessageBubble({
                   )}
                 </span>
               )}
+            </div>
+            <div
+              className={`absolute top-1/2 -translate-y-1/2 text-[0.5625rem] font-medium text-muted-foreground opacity-0 group-hover/message:opacity-100 transition-opacity whitespace-nowrap ${
+                isOwn ? "-left-14" : "-right-14"
+              }`}
+            >
+              {new Date(msg.createdAt).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
             </div>
           </div>
         )}

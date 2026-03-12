@@ -1,8 +1,11 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
+import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { LogOut, Moon, Plus, Search, Sun } from "lucide-react";
 import type { ChatWithRole } from "@/store/chatStore";
 
 interface ChatSidebarProps {
@@ -32,71 +35,81 @@ export default function ChatSidebar({
   onNewChat,
   onLogout,
 }: ChatSidebarProps) {
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const visibleChats = useMemo(() => {
+    if (!search.trim()) return chats;
+    const term = search.trim().toLowerCase();
+    return chats.filter((chat) => chat.name.toLowerCase().includes(term));
+  }, [chats, search]);
+
+  const displayName = userEmail?.split("@")[0] || "User";
+
   return (
-    <>
-      {/* Header */}
-      <div className="px-4 md:px-5 h-14 md:h-16 border-b flex items-center justify-between shrink-0">
-        <span className="font-semibold text-base tracking-tight">Chat App</span>
-        <div className="flex items-center gap-2 md:gap-4">
-          <span className="text-xs text-muted-foreground truncate max-w-20 md:max-w-30">
-            {userEmail}
-          </span>
-          <Button
-            onClick={onLogout}
-            variant="ghost"
-            size="sm"
-            className="text-xs h-auto py-1"
+    <div className="flex h-full flex-col bg-background">
+      <div className="h-16 shrink-0 border-b px-4 flex items-center justify-between">
+        <span className="text-lg font-semibold tracking-tighter uppercase">
+          ChatApp
+        </span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            className="p-2 rounded-full text-muted-foreground hover:bg-muted transition-colors"
+            title="Toggle theme"
           >
-            Logout
-          </Button>
+            {mounted && theme === "dark" ? (
+              <Sun className="w-5 h-5" />
+            ) : (
+              <Moon className="w-5 h-5" />
+            )}
+          </button>
+          <button
+            onClick={onNewChat}
+            className="p-2 rounded-full text-muted-foreground hover:bg-muted transition-colors"
+            title="New chat"
+          >
+            <Plus className="w-5 h-5" />
+          </button>
         </div>
       </div>
 
-      {/* Chat list */}
+      <div className="p-3">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search chats..."
+            className="w-full rounded-xl bg-muted/70 py-2 pl-9 pr-3 text-sm outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
+      </div>
+
       <div className="flex-1 overflow-hidden">
-        <ScrollArea className="h-full">
-          {/* New chat row */}
-          <button
-            onClick={onNewChat}
-            className="w-full text-left px-4 md:px-5 py-3 md:py-4 border-b flex items-center gap-3 md:gap-4 hover:bg-muted transition"
-          >
-            <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-primary flex items-center justify-center shrink-0 text-primary-foreground">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="w-5 h-5 md:w-6 md:h-6"
-              >
-                <path d="M6 12L3.269 3.125A59.8 59.8 0 0 1 21.486 12a59.8 59.8 0 0 1-18.217 8.875zm0 0h7.5" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-sm font-medium">New chat</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Invite someone by email
-              </p>
-            </div>
-          </button>
+        <ScrollArea className="h-full px-2 pb-2">
 
           {loading && (
-            <p className="text-xs text-muted-foreground px-5 py-4">
+            <p className="text-xs text-muted-foreground px-3 py-4">
               Loading chats…
             </p>
           )}
           {error && (
-            <p className="text-xs text-destructive px-5 py-4">{error}</p>
+            <p className="text-xs text-destructive px-3 py-4">{error}</p>
           )}
-          {!loading && chats.length === 0 && (
-            <p className="text-xs text-muted-foreground text-center px-5 py-10">
+          {!loading && visibleChats.length === 0 && (
+            <p className="text-xs text-muted-foreground text-center px-3 py-10">
               No chats yet.
             </p>
           )}
 
-          {chats.map((chat) => {
+          {visibleChats.map((chat) => {
             const isActive = chat.id === activeChatId;
             const pending = chat.role === "pending";
             const isJoining = joiningChatId === chat.id;
@@ -105,13 +118,21 @@ export default function ChatSidebar({
               <div
                 key={chat.id}
                 onClick={() => onSelectChat(chat.id)}
-                className={`w-full text-left px-4 md:px-5 py-3 md:py-4 border-b flex items-center gap-3 md:gap-4 transition cursor-pointer ${
-                  isActive ? "bg-muted" : "hover:bg-muted/50"
+                className={`w-full text-left px-3 py-3 my-1 rounded-xl flex items-center gap-3 transition cursor-pointer ${
+                  isActive
+                    ? "bg-foreground text-background"
+                    : "hover:bg-muted/80"
                 }`}
               >
-                <Avatar className="w-10 h-10 md:w-12 md:h-12 shrink-0">
+                <Avatar className="w-10 h-10 shrink-0">
                   <AvatarFallback
-                    className={pending ? "bg-muted text-muted-foreground" : ""}
+                    className={
+                      pending
+                        ? "bg-muted text-muted-foreground"
+                        : isActive
+                          ? "bg-background/20 text-background"
+                          : ""
+                    }
                   >
                     {chat.name[0].toUpperCase()}
                   </AvatarFallback>
@@ -119,13 +140,17 @@ export default function ChatSidebar({
 
                 <div className="flex-1 min-w-0">
                   <p
-                    className={`text-sm font-semibold truncate ${
-                      pending ? "text-muted-foreground" : ""
+                    className={`text-sm font-medium truncate ${
+                      pending && !isActive ? "text-muted-foreground" : ""
                     }`}
                   >
                     {chat.name}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
+                  <p
+                    className={`text-xs mt-0.5 ${
+                      isActive ? "text-background/70" : "text-muted-foreground"
+                    }`}
+                  >
                     {pending ? "Invited" : chat.role}
                   </p>
                 </div>
@@ -159,6 +184,29 @@ export default function ChatSidebar({
           })}
         </ScrollArea>
       </div>
-    </>
+
+      <div className="h-16 shrink-0 p-3 border-t bg-muted/40 flex items-center gap-3">
+        <Avatar className="w-8 h-8 shrink-0">
+          <AvatarFallback className="text-[0.6875rem] font-semibold">
+            {displayName.slice(0, 2).toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <p className="text-[0.6875rem] font-medium truncate leading-none mb-1">
+            {displayName}
+          </p>
+          <p className="text-[0.5625rem] text-emerald-500 font-medium uppercase tracking-wider">
+            Online
+          </p>
+        </div>
+        <button
+          onClick={onLogout}
+          className="p-2 rounded-lg text-muted-foreground hover:bg-muted transition-colors"
+          title="Logout"
+        >
+          <LogOut className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
   );
 }

@@ -79,8 +79,8 @@ export default function ScreenShareControls({ chatId, chatName, canShare, isInCa
 
         {/* Incoming screen share notification */}
         {isIncomingShare && presenter && (
-          <div className="flex items-center gap-2 bg-blue-50 px-3 py-2 rounded-lg border border-blue-200">
-            <span className="text-sm font-medium text-blue-900">
+          <div className="flex items-center gap-2 bg-muted px-3 py-2 rounded-xl border">
+            <span className="text-sm text-foreground/90">
               🖥️ {presenter.name} is sharing their screen
             </span>
           </div>
@@ -94,13 +94,13 @@ export default function ScreenShareControls({ chatId, chatName, canShare, isInCa
               <Button
                 onClick={() => setShowOptions(true)}
                 variant="outline"
-                size="sm"
-                className="gap-2"
+                size="icon"
+                className="h-9 w-9 rounded-xl"
+                title="Share screen"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25" />
                 </svg>
-                Share Screen
               </Button>
             )}
 
@@ -114,9 +114,9 @@ export default function ScreenShareControls({ chatId, chatName, canShare, isInCa
 
             {/* Sharing - show controls */}
             {shareStatus === 'sharing' && (
-              <div className="flex items-center gap-2 bg-green-50 px-3 py-2 rounded-lg border border-green-200">
+              <div className="flex items-center gap-2 bg-muted px-3 py-2 rounded-xl border">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                <span className="text-sm font-medium text-green-900 tabular-nums">
+                <span className="text-sm tabular-nums">
                   Sharing {formatDuration(shareDuration)}
                 </span>
                 

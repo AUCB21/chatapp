@@ -80,6 +80,7 @@ Request → middleware (edge session check)
 ## Notes
 
 - Passwords are managed entirely by Supabase Auth — never stored in application tables
+- Prefer `SUPABASE_URL` and `SUPABASE_ANON_KEY` for server/middleware config; keep `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` for browser client usage
 - `DATABASE_URL` uses Supabase pooler (port 6543) for runtime
 - `DATABASE_URL_DIRECT` uses direct connection (port 5432) for migrations only
 - Realtime subscriptions are RLS-filtered server-side before delivery

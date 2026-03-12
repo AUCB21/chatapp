@@ -51,8 +51,15 @@ export async function DELETE(_req: NextRequest) {
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (supabaseServiceKey) {
       const { createClient } = await import("@supabase/supabase-js");
+      const supabaseUrl =
+        process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+      if (!supabaseUrl) {
+        throw new Error("Missing SUPABASE_URL for admin client creation");
+      }
+
       const adminClient = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        supabaseUrl,
         supabaseServiceKey,
         { auth: { autoRefreshToken: false, persistSession: false } }
       );
