@@ -26,6 +26,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <meta name="google-site-verification" content="pT_8Kp2I44n3WEBQC93nuYLMse13b4VxbbddU1JsxFg" />
       <body
         className={`${geistSans.variable} ${geistMono.variable} bg-background text-foreground font-sans antialiased`}
       >
