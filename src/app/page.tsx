@@ -1,18 +1,23 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
 import { useChat } from "@/hooks/useChat";
 import { usePresence } from "@/hooks/usePresence";
+import { useBootLoader } from "@/hooks/useBootLoader";
+import { useIdleDetector } from "@/hooks/useIdleDetector";
 import { useSessionStore } from "@/store/sessionStore";
 import { groupReactions, useChatStore } from "@/store/chatStore";
+import { useProfileStore, selectIsDnd } from "@/store/profileStore";
 import { unlockAudio } from "@/lib/sounds";
 import { useScreenShare } from "@/hooks/useScreenShare";
 import { useVoiceCall } from "@/hooks/useVoiceCall";
 import NewChatModal from "@/components/NewChatModal";
 import ScreenShareViewer from "@/components/ScreenShareViewer";
 import CallModal from "@/components/CallModal";
+import BootScreen from "@/components/BootScreen";
+import SettingsView from "@/components/chat/SettingsView";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -22,6 +27,7 @@ import MessageBubble from "@/components/chat/MessageBubble";
 import MessageInput from "@/components/chat/MessageInput";
 import PendingPrompt from "@/components/chat/PendingPrompt";
 import EmptyChatState from "@/components/chat/EmptyChatState";
+import MembersPanel from "@/components/chat/MembersPanel";
 import { useConnectionStatus } from "@/hooks/useConnectionStatus";
 import { useMutedChats } from "@/hooks/useMutedChats";
 import { supabase } from "@/lib/supabaseClient";
@@ -50,10 +56,25 @@ function isDifferentDay(a: Date, b: Date): boolean {
   );
 }
 
-export default function ChatPage() {
+export default function ChatPageWrapper() {
+  const boot = useBootLoader();
+
+  if (!boot.ready) {
+    return <BootScreen progress={boot.progress} label={boot.label} />;
+  }
+
+  return <ChatPage />;
+}
+
+function ChatPage() {
   const router = useRouter();
   const user = useSessionStore((s) => s.user);
   const clearSession = useSessionStore((s) => s.clearSession);
+  const isDnd = useProfileStore(selectIsDnd);
+  const profileStatus = useProfileStore((s) => s.profile?.status);
+  const accentBg = useProfileStore((s) => s.profile?.accentBg);
+  const accentFont = useProfileStore((s) => s.profile?.accentFont);
+  const accentChat = useProfileStore((s) => s.profile?.accentChat);
 
   const {
     chats,
@@ -124,6 +145,8 @@ export default function ChatPage() {
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const [searchMode, setSearchMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [membersOpen, setMembersOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -137,6 +160,33 @@ export default function ChatPage() {
   const activeChat = chats.find((c) => c.id === activeChatId);
   const isPending = activeChat?.role === "pending";
   const isDeclined = activeChat?.role === "declined";
+
+  /* ── Idle detection (Discord-style) ── */
+  const onIdle = useCallback(() => {
+    // Only auto-set to idle if user is currently "online"
+    if (useProfileStore.getState().profile?.status === "online") {
+      fetch("/api/user/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "idle" }),
+      }).catch(() => {});
+      useProfileStore.getState().updateProfile({ status: "idle" });
+    }
+  }, []);
+
+  const onActive = useCallback(() => {
+    // Restore to online when user becomes active (only from idle, not DND)
+    if (useProfileStore.getState().profile?.status === "idle") {
+      fetch("/api/user/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "online" }),
+      }).catch(() => {});
+      useProfileStore.getState().updateProfile({ status: "online" });
+    }
+  }, []);
+
+  useIdleDetector(onIdle, onActive, profileStatus !== "dnd");
 
   /* ── Effects ── */
 
@@ -259,7 +309,23 @@ export default function ChatPage() {
     const { supabase } = await import("@/lib/supabaseClient");
     await supabase.auth.signOut();
     clearSession();
+    useChatStore.getState().reset();
+    useProfileStore.getState().reset();
     router.push("/login");
+  }
+
+  async function handleDeleteAccount() {
+    try {
+      const res = await fetch("/api/auth/account", { method: "DELETE" });
+      if (res.ok) {
+        clearSession();
+        useChatStore.getState().reset();
+        useProfileStore.getState().reset();
+        router.push("/login");
+      }
+    } catch {
+      // silent — user stays on page
+    }
   }
 
   async function handleSend(content: string) {
@@ -391,32 +457,22 @@ export default function ChatPage() {
   /* ── Render ── */
 
   return (
-    <div className="flex h-dvh bg-background text-foreground overflow-hidden">
+    <div
+      className="flex h-dvh bg-background text-foreground overflow-hidden"
+      style={{
+        ...(accentBg ? { backgroundColor: accentBg } : {}),
+        ...(accentFont ? { color: accentFont } : {}),
+      }}
+    >
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-[20rem] shrink-0 border-r flex-col">
-        <ChatSidebar
-          chats={chats}
-          activeChatId={activeChatId}
-          loading={loading.chats}
-          error={error.chats}
-          userEmail={user?.email}
-          joiningChatId={joiningChatId}
-          unreadCounts={unreadCounts}
-          onSelectChat={handleSelectChat}
-          onJoin={handleJoin}
-          onDecline={handleDecline}
-          onNewChat={handleNewChat}
-          onLogout={handleLogout}
-          onDeleteChat={handleDeleteChat}
-          mutedChats={mutedChats}
-          onToggleMute={toggleChatMute}
-        />
-      </aside>
-
-      {/* Mobile sidebar */}
-      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-        <SheetContent side="left" className="w-[80vw] max-w-sm p-0 flex flex-col">
-          <SheetTitle className="sr-only">Navigation</SheetTitle>
+        {settingsOpen ? (
+          <SettingsView
+            onBack={() => setSettingsOpen(false)}
+            onLogout={handleLogout}
+            onDeleteAccount={handleDeleteAccount}
+          />
+        ) : (
           <ChatSidebar
             chats={chats}
             activeChatId={activeChatId}
@@ -430,10 +486,44 @@ export default function ChatPage() {
             onDecline={handleDecline}
             onNewChat={handleNewChat}
             onLogout={handleLogout}
+            onOpenSettings={() => setSettingsOpen(true)}
             onDeleteChat={handleDeleteChat}
             mutedChats={mutedChats}
             onToggleMute={toggleChatMute}
           />
+        )}
+      </aside>
+
+      {/* Mobile sidebar */}
+      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        <SheetContent side="left" className="w-[80vw] max-w-sm p-0 flex flex-col">
+          <SheetTitle className="sr-only">Navigation</SheetTitle>
+          {settingsOpen ? (
+            <SettingsView
+              onBack={() => setSettingsOpen(false)}
+              onLogout={handleLogout}
+              onDeleteAccount={handleDeleteAccount}
+            />
+          ) : (
+            <ChatSidebar
+              chats={chats}
+              activeChatId={activeChatId}
+              loading={loading.chats}
+              error={error.chats}
+              userEmail={user?.email}
+              joiningChatId={joiningChatId}
+              unreadCounts={unreadCounts}
+              onSelectChat={handleSelectChat}
+              onJoin={handleJoin}
+              onDecline={handleDecline}
+              onNewChat={handleNewChat}
+              onLogout={handleLogout}
+              onOpenSettings={() => setSettingsOpen(true)}
+              onDeleteChat={handleDeleteChat}
+              mutedChats={mutedChats}
+              onToggleMute={toggleChatMute}
+            />
+          )}
         </SheetContent>
       </Sheet>
 
@@ -464,6 +554,7 @@ export default function ChatPage() {
               onStopSharing={stopSharing}
               onBack={() => setActiveChat(null)}
               onToggleSearch={() => setSearchMode((m) => !m)}
+              onToggleMembers={() => setMembersOpen(true)}
             />
 
             {connectionStatus !== "connected" && (
@@ -751,6 +842,16 @@ export default function ChatPage() {
           <EmptyChatState onOpenSidebar={() => setSidebarOpen(true)} />
         )}
       </main>
+
+      {activeChatId && (
+        <MembersPanel
+          chatId={activeChatId}
+          open={membersOpen}
+          onOpenChange={setMembersOpen}
+          currentUserId={user?.id ?? ""}
+          currentUserRole={activeChat?.role ?? "read"}
+        />
+      )}
 
       <NewChatModal
         open={modalOpen}

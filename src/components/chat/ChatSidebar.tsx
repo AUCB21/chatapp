@@ -10,8 +10,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bell, BellOff, EllipsisVertical, LogOut, Moon, Plus, Search, Sun } from "lucide-react";
+import { Bell, BellOff, EllipsisVertical, LogOut, Moon, Plus, Search, Settings, Sun } from "lucide-react";
+import { useProfileStore } from "@/store/profileStore";
 import type { ChatWithRole } from "@/store/chatStore";
+import type { UserStatus } from "@/db/schema";
 
 interface ChatSidebarProps {
   chats: ChatWithRole[];
@@ -26,6 +28,7 @@ interface ChatSidebarProps {
   onDecline: (chatId: string) => void;
   onNewChat: () => void;
   onLogout: () => void;
+  onOpenSettings: () => void;
   onDeleteChat: (chatId: string, mode: "for_me" | "for_everyone") => void;
   mutedChats: Set<string>;
   onToggleMute: (chatId: string) => void;
@@ -58,6 +61,7 @@ export default function ChatSidebar({
   onDecline,
   onNewChat,
   onLogout,
+  onOpenSettings,
   onDeleteChat,
   mutedChats,
   onToggleMute,
@@ -65,6 +69,7 @@ export default function ChatSidebar({
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [search, setSearch] = useState("");
+  const profile = useProfileStore((s) => s.profile);
 
   useEffect(() => {
     setMounted(true);
@@ -82,7 +87,8 @@ export default function ChatSidebar({
     return nonPending.filter((chat) => chat.name.toLowerCase().includes(term));
   }, [chats, search]);
 
-  const displayName = userEmail?.split("@")[0] || "User";
+  const displayName = profile?.displayName ?? userEmail?.split("@")[0] ?? "User";
+  const userStatus: UserStatus = profile?.status ?? "online";
 
   return (
     <div className="flex h-full flex-col bg-sidebar">
@@ -317,10 +323,21 @@ export default function ChatSidebar({
           <div className="min-w-0 flex-1">
             <p className="text-xs font-medium truncate leading-none">{displayName}</p>
             <div className="flex items-center gap-1 mt-1">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span className="text-[0.6rem] text-muted-foreground">Online</span>
+              <div className={`w-1.5 h-1.5 rounded-full ${
+                userStatus === "online" ? "bg-emerald-500" :
+                userStatus === "idle" ? "bg-amber-500" :
+                "bg-rose-500"
+              }`} />
+              <span className="text-[0.6rem] text-muted-foreground capitalize">{userStatus === "dnd" ? "Do Not Disturb" : userStatus}</span>
             </div>
           </div>
+          <button
+            onClick={onOpenSettings}
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-sidebar-accent transition-colors"
+            title="Settings"
+          >
+            <Settings className="w-3.5 h-3.5" />
+          </button>
           <button
             onClick={onLogout}
             className="w-7 h-7 flex items-center justify-center rounded-lg text-rose-500/70 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"

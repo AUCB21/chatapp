@@ -185,13 +185,18 @@ export function useChat(): UseChatReturn {
     }
   }, []);
 
+  // Skip initial chat fetch + deleted-for-me sync if boot preload already ran
+  const bootedRef = useRef(useChatStore.getState().booted);
+
   useEffect(() => {
     if (!isReady || !userId) return;
+    if (bootedRef.current) { bootedRef.current = false; return; }
     refreshChats();
   }, [isReady, userId]);
 
   useEffect(() => {
     if (!isReady || !userId) return;
+    if (useChatStore.getState().booted) return; // boot already synced
 
     const pendingIds = readPendingDeletedMessages(userId);
     if (pendingIds.length === 0) return;
@@ -407,7 +412,7 @@ export function useChat(): UseChatReturn {
       .on(
         "postgres_changes",
         {
-          event: "*",
+          event: "INSERT",
           schema: "public",
           table: "invitations",
           ...(userEmail ? { filter: `invited_email=eq.${userEmail}` } : {}),
@@ -440,8 +445,9 @@ export function useChat(): UseChatReturn {
       setLoading("messages", true);
       setError("messages", null);
 
-      const existingMessages = useChatStore.getState().messages[activeId];
-      if (!existingMessages || existingMessages.length === 0) {
+      const storeMessages = useChatStore.getState().messages;
+      const alreadyFetched = activeId in storeMessages;
+      if (!alreadyFetched) {
         try {
           const res = await fetch(`/api/chat/${activeId}/messages`);
 

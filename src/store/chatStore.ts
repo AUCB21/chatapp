@@ -19,6 +19,7 @@ export interface ChatState {
   reactions: Record<string, Reaction[]>; // keyed by chatId
   unreadCounts: Record<string, number>; // chatId → unread message count
   hasMoreMessages: Record<string, boolean>; // chatId → whether older messages exist
+  booted: boolean; // true after boot preload completes
 
   // Loading / error per-resource
   loading: {
@@ -31,6 +32,7 @@ export interface ChatState {
   };
 
   // Actions
+  setBooted: (value: boolean) => void;
   setChats: (chats: ChatWithRole[]) => void;
   setActiveChat: (chatId: string | null) => void;
   setMessages: (chatId: string, messages: Message[]) => void;
@@ -63,6 +65,7 @@ const initialState = {
   reactions: {},
   unreadCounts: {},
   hasMoreMessages: {},
+  booted: false,
   loading: { chats: false, messages: false },
   error: { chats: null, messages: null },
 };
@@ -73,6 +76,9 @@ export const useChatStore = create<ChatState>()(
   devtools(
     (set) => ({
       ...initialState,
+
+      setBooted: (value) =>
+        set(() => ({ booted: value }), false, "setBooted"),
 
       setChats: (chats) =>
         set(

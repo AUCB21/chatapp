@@ -156,6 +156,14 @@ Allow modifying chat participants' visible details (username, profile picture, s
 ### 9. Me-to-Me Personal Chat
 Add a self-chat so each user has a personal notes/saved-messages space. Should appear as a pinned chat and work with normal message and search flows.
 
+### 31. Invitation Email for Non-Existing Users
+When a direct email invitation is sent and the target has no account, send a Supabase `inviteUserByEmail` signup magic-link. Requires `SUPABASE_SERVICE_ROLE_KEY` in env.
+
+- Admin client utility created at `src/lib/supabaseAdmin.ts`.
+- Fire-and-forget call in `POST /api/invite` — never blocks the invitation response.
+- If user already exists, Supabase returns an error which is silently ignored.
+- Redirect target: `/login` so the new user lands on the login page after signup.
+
 ---
 
 ## 🔵 Lower Priority — Polish & Security

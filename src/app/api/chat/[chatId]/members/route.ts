@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { getAuthUser } from "@/lib/supabaseServer";
-import { getUserRole, addMember, removeMember } from "@/db/queries/memberships";
+import { getUserRole, getChatMembers, addMember, removeMember } from "@/db/queries/memberships";
 import { addMemberSchema, updateMemberSchema } from "@/lib/validation";
 import {
   ok,
@@ -12,6 +12,27 @@ import {
 } from "@/lib/apiResponse";
 
 type Params = { params: Promise<{ chatId: string }> };
+
+/**
+ * GET /api/chat/[chatId]/members
+ * Returns all members of the chat with roles and emails.
+ */
+export async function GET(_req: NextRequest, { params }: Params) {
+  const user = await getAuthUser();
+  if (!user) return unauthorized();
+
+  const { chatId } = await params;
+
+  try {
+    const role = await getUserRole(user.id, chatId);
+    if (!role) return forbidden();
+
+    const members = await getChatMembers(chatId);
+    return ok({ members });
+  } catch (error) {
+    return serverError("Failed to fetch members", error);
+  }
+}
 
 /**
  * POST /api/chat/[chatId]/members

@@ -44,3 +44,18 @@ export const createInviteSchema = z.object({
   chatName: z.string().min(1).max(100).trim(),
   invitedEmail: z.string().email().optional(),
 });
+
+const hexColor = z
+  .string()
+  .regex(/^#[0-9a-fA-F]{6}$/, "Must be a hex color like #ff00aa")
+  .nullable()
+  .optional();
+
+export const updateProfileSchema = z.object({
+  username: z.string().min(1).max(50).trim().optional(),
+  displayName: z.string().min(1).max(80).trim().optional(),
+  status: z.enum(["online", "idle", "dnd"]).optional(),
+  accentBg: hexColor,
+  accentFont: hexColor,
+  accentChat: hexColor,
+});

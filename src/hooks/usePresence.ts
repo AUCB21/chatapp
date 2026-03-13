@@ -4,7 +4,9 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import { useSessionStore } from "@/store/sessionStore";
+import { useProfileStore } from "@/store/profileStore";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import type { UserStatus } from "@/db/schema";
 
 // --- Types ---
 
@@ -13,6 +15,8 @@ export interface PresenceUser {
   email: string;
   isTyping: boolean;
   lastSeen: string; // ISO timestamp
+  status?: UserStatus;
+  displayName?: string;
 }
 
 interface UsePresenceReturn {
@@ -34,10 +38,24 @@ const TYPING_TIMEOUT = 3000;
 export function usePresence(chatId: string | null): UsePresenceReturn {
   const isReady = useSupabaseAuth();
   const user = useSessionStore((s) => s.user);
+  const profile = useProfileStore((s) => s.profile);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [onlineUsers, setOnlineUsers] = useState<PresenceUser[]>([]);
+
+  /** Build presence payload with current profile data */
+  const getPresencePayload = useCallback(
+    (isTyping: boolean) => ({
+      id: user?.id ?? "",
+      email: user?.email || "Unknown",
+      isTyping,
+      lastSeen: new Date().toISOString(),
+      status: profile?.status ?? ("online" as UserStatus),
+      displayName: profile?.displayName ?? user?.email?.split("@")[0] ?? "Unknown",
+    }),
+    [user, profile?.status, profile?.displayName]
+  );
 
   // Track and sync presence
   useEffect(() => {
@@ -61,6 +79,8 @@ export function usePresence(chatId: string | null): UsePresenceReturn {
               email: latest.email || "Unknown",
               isTyping: latest.isTyping || false,
               lastSeen: latest.lastSeen || new Date().toISOString(),
+              status: latest.status,
+              displayName: latest.displayName,
             });
           }
         }
@@ -69,13 +89,7 @@ export function usePresence(chatId: string | null): UsePresenceReturn {
       })
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
-          // Track this user's presence
-          await channel.track({
-            id: user.id,
-            email: user.email || "Unknown",
-            isTyping: false,
-            lastSeen: new Date().toISOString(),
-          });
+          await channel.track(getPresencePayload(false));
         }
       });
 
@@ -87,43 +101,27 @@ export function usePresence(chatId: string | null): UsePresenceReturn {
       channelRef.current = null;
       setOnlineUsers([]);
     };
-  }, [isReady, chatId, user]);
+  }, [isReady, chatId, user, getPresencePayload]);
 
   const startTyping = useCallback(() => {
     if (!channelRef.current || !user) return;
 
-    channelRef.current.track({
-      id: user.id,
-      email: user.email || "Unknown",
-      isTyping: true,
-      lastSeen: new Date().toISOString(),
-    });
+    channelRef.current.track(getPresencePayload(true));
 
-    // Auto-stop typing after timeout
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(() => {
       if (channelRef.current && user) {
-        channelRef.current.track({
-          id: user.id,
-          email: user.email || "Unknown",
-          isTyping: false,
-          lastSeen: new Date().toISOString(),
-        });
+        channelRef.current.track(getPresencePayload(false));
       }
     }, TYPING_TIMEOUT);
-  }, [user]);
+  }, [user, getPresencePayload]);
 
   const stopTyping = useCallback(() => {
     if (!channelRef.current || !user) return;
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
 
-    channelRef.current.track({
-      id: user.id,
-      email: user.email || "Unknown",
-      isTyping: false,
-      lastSeen: new Date().toISOString(),
-    });
-  }, [user]);
+    channelRef.current.track(getPresencePayload(false));
+  }, [user, getPresencePayload]);
 
   const typingUsers = onlineUsers.filter((u) => u.isTyping);
 

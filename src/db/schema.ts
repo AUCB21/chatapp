@@ -12,6 +12,7 @@ import {
 
 // --- Enums ---
 
+export const userStatusEnum = pgEnum("user_status", ["online", "idle", "dnd"]);
 export const memberRoleEnum = pgEnum("member_role", ["read", "write", "admin"]);
 export const invitationStatusEnum = pgEnum("invitation_status", [
   "pending",
@@ -38,6 +39,23 @@ export const callParticipantStateEnum = pgEnum("call_participant_state", [
 ]);
 
 // --- Tables ---
+
+/**
+ * user_profiles: extended user data keyed by auth.users(id).
+ * Created on first profile fetch (upsert pattern).
+ */
+export const userProfiles = pgTable("user_profiles", {
+  userId: uuid("user_id").primaryKey(), // FK → auth.users(id), set in SQL
+  username: text("username").notNull(), // default = email prefix
+  displayName: text("display_name").notNull(), // default = username
+  avatarUrl: text("avatar_url"), // placeholder until storage items built
+  status: userStatusEnum("status").notNull().default("online"),
+  accentBg: text("accent_bg"), // custom background color (hex)
+  accentFont: text("accent_font"), // custom font color (hex)
+  accentChat: text("accent_chat"), // custom chat bubble color (hex)
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
 
 /**
  * chats: global chat rooms.
@@ -222,6 +240,8 @@ export const invitations = pgTable(
   })
 );
 
+export type UserProfile = typeof userProfiles.$inferSelect;
+export type UserStatus = (typeof userStatusEnum.enumValues)[number];
 export type Chat = typeof chats.$inferSelect;
 export type Membership = typeof memberships.$inferSelect;
 export type Message = typeof messages.$inferSelect;

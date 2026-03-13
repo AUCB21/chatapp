@@ -4,6 +4,7 @@ import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { useProfileStore } from "@/store/profileStore";
 import type { Message } from "@/db/schema";
 import type { ReactionGroup } from "@/store/chatStore";
 
@@ -205,6 +206,7 @@ export default function MessageBubble({
   onDeleteForMe,
   onDeleteForEveryone,
 }: MessageBubbleProps) {
+  const accentChat = useProfileStore((s) => s.profile?.accentChat);
   const [deletePickerOpen, setDeletePickerOpen] = useState(false);
   const isFailed = msg.id.startsWith("failed-");
   const isEditing = editContent !== null;
@@ -278,6 +280,7 @@ export default function MessageBubble({
                   }`
                 : "bg-card border border-border rounded-bl-sm shadow-sm"
             } ${isDeleted ? "opacity-40 italic" : ""}`}
+            style={isOwn && accentChat ? { backgroundColor: accentChat } : undefined}
           >
             <div className="flex items-end gap-1.5">
               <div className="space-y-1 min-w-0">{renderedContent}</div>
@@ -321,8 +324,8 @@ export default function MessageBubble({
             {!isDeleted && !isAnyEditing && (
               <div
                 onClick={(e) => e.stopPropagation()}
-                className={`absolute bottom-full mb-1 ${
-                  isOwn ? "right-0" : "left-0"
+                className={`absolute top-1/2 -translate-y-1/2 ${
+                  isOwn ? "right-full mr-1" : "left-full ml-1"
                 } z-10 flex items-center gap-0.5 bg-popover border border-border shadow-md rounded-xl px-1 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity`}
               >
                 {/* React */}
