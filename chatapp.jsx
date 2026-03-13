@@ -99,7 +99,7 @@ const Avatar = ({ name, size = "md", src = null, status = null }) => {
   };
   const initials = name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || "??";
   return (
-    <div className="relative flex-shrink-0">
+    <div className="relative shrink-0">
       {src ? (
         <img src={src} className={`${sizes[size]} rounded-full object-cover border dark:border-zinc-800`} alt={name} />
       ) : (
@@ -261,7 +261,7 @@ export default function App() {
         
         {/* SIDEBAR */}
         <aside className={`w-[320px] border-r dark:border-zinc-800 flex flex-col bg-white dark:bg-zinc-950 z-20 ${activeChat ? 'hidden md:flex' : 'flex'}`}>
-          <div className="h-16 flex-shrink-0 border-b dark:border-zinc-800 flex justify-between items-center px-6">
+          <div className="h-16 shrink-0 border-b dark:border-zinc-800 flex justify-between items-center px-6">
             <h1 className="text-[19px] font-bold tracking-tight uppercase">ChatApp</h1>
             <div className="flex items-center gap-1">
               <button onClick={toggleDarkMode} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-full transition-colors text-zinc-500">
@@ -307,7 +307,7 @@ export default function App() {
           </div>
 
           {/* User Footer (Discord Style) */}
-          <div className="h-16 flex-shrink-0 p-3 bg-zinc-50/50 dark:bg-zinc-900/50 border-t dark:border-zinc-800 flex items-center gap-3">
+          <div className="h-16 shrink-0 p-3 bg-zinc-50/50 dark:bg-zinc-900/50 border-t dark:border-zinc-800 flex items-center gap-3">
             <div className="cursor-pointer hover:opacity-80" onClick={() => setView('profile')}>
               <Avatar name={user?.displayName || "Me"} size="sm" status="online" />
             </div>
@@ -351,7 +351,7 @@ export default function App() {
 
           {activeChat && view === 'chats' ? (
             <>
-              <header className="h-16 flex-shrink-0 border-b dark:border-zinc-800 px-6 flex justify-between items-center bg-white dark:bg-zinc-950 z-10">
+              <header className="h-16 shrink-0 border-b dark:border-zinc-800 px-6 flex justify-between items-center bg-white dark:bg-zinc-950 z-10">
                 <div className="flex items-center gap-4">
                   <button onClick={() => setActiveChat(null)} className="md:hidden p-2 -ml-2 text-zinc-500"><ChevronLeft size={20} /></button>
                   <Avatar name={activeChat.name} size="md" />
@@ -381,7 +381,7 @@ export default function App() {
               <div className="flex-1 flex flex-col overflow-hidden relative">
                 {/* CALL INTERFACE (Pinned top) */}
                 {(callStatus === 'active' || callStatus === 'calling') && (
-                  <div className="flex-shrink-0 p-4 bg-zinc-50 dark:bg-zinc-900/30 border-b dark:border-zinc-800 animate-in slide-in-from-top duration-500">
+                  <div className="shrink-0 p-4 bg-zinc-50 dark:bg-zinc-900/30 border-b dark:border-zinc-800 animate-in slide-in-from-top duration-500">
                     <div className="max-w-3xl mx-auto bg-zinc-950 rounded-[2rem] aspect-video relative overflow-hidden shadow-2xl border dark:border-zinc-800 flex flex-col items-center justify-center">
                       <div className="absolute top-6 left-6 flex items-center gap-2 bg-red-600 px-3 py-1 rounded-full z-10">
                         <div className="w-1.5 h-1.5 bg-white rounded-full animate-ping" />
@@ -454,7 +454,7 @@ export default function App() {
             </>
           ) : view === 'profile' ? (
             <div className="flex-1 flex flex-col animate-in fade-in duration-300">
-              <header className="h-16 flex-shrink-0 border-b dark:border-zinc-800 px-8 flex items-center bg-white dark:bg-zinc-950">
+              <header className="h-16 shrink-0 border-b dark:border-zinc-800 px-8 flex items-center bg-white dark:bg-zinc-950">
                 <h2 className="text-lg font-bold uppercase tracking-tight">User Settings</h2>
               </header>
               <div className="flex-1 overflow-y-auto p-10 custom-scrollbar bg-zinc-50/50 dark:bg-zinc-900/10">

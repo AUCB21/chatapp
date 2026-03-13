@@ -26,6 +26,7 @@ interface UseChatReturn {
   sendMessage: (content: string, parentId?: string) => Promise<void>;
   editMessage: (messageId: string, content: string) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
+  deleteChat: (chatId: string, mode: "for_me" | "for_everyone") => Promise<void>;
   toggleReaction: (messageId: string, emoji: string) => Promise<void>;
   refreshChats: () => Promise<void>;
   joinChat: (chatId: string) => Promise<void>;
@@ -123,6 +124,16 @@ export function useChat(): UseChatReturn {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "invitations" },
+        () => { refreshChats(); }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "chats" },
+        () => { refreshChats(); }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "memberships" },
         () => { refreshChats(); }
       )
       .subscribe((status, err) => {
@@ -500,6 +511,24 @@ export function useChat(): UseChatReturn {
     [activeChatId]
   );
 
+  // --- Delete a chat ---
+
+  const deleteChatFn = useCallback(
+    async (chatId: string, mode: "for_me" | "for_everyone") => {
+      const res = await fetch(`/api/chat/${chatId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error ?? "Failed to delete chat");
+      }
+      removeMembership(chatId);
+    },
+    [removeMembership]
+  );
+
   // --- Accept a pending invitation ---
   // After joining, refreshChats() updates the role from "pending" to "write",
   // which changes activeMembership and automatically triggers the message fetch.
@@ -546,6 +575,7 @@ export function useChat(): UseChatReturn {
     sendMessage,
     editMessage: editMessageFn,
     deleteMessage: deleteMessageFn,
+    deleteChat: deleteChatFn,
     toggleReaction,
     refreshChats,
     joinChat,

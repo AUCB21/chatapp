@@ -8,7 +8,12 @@
       "Bash(npx drizzle-kit generate --custom --name=realtime_publication)",
       "Bash(ls -la src/db/migrations/*.sql)",
       "Bash(xargs wc -l)",
-      "Bash(xargs grep -l \"export\")"
+      "Bash(xargs grep -l \"export\")",
+      "Bash(npx tsc --noEmit src/hooks/useVoiceCall.ts)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(xargs basename:*)",
+      "Bash(grep -r \"DELETE\\\\|delete\" /c/Users/Agus/Documents/Coding/chat-app/src/app/api/chat/[chatId]/route.ts)",
+      "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")"
     ]
   }
 }

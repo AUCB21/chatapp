@@ -20,6 +20,7 @@ interface ChatSidebarProps {
   onDecline: (chatId: string) => void;
   onNewChat: () => void;
   onLogout: () => void;
+  onDeleteChat: (chatId: string) => void;
 }
 
 export default function ChatSidebar({
@@ -34,6 +35,7 @@ export default function ChatSidebar({
   onDecline,
   onNewChat,
   onLogout,
+  onDeleteChat,
 }: ChatSidebarProps) {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -118,6 +120,10 @@ export default function ChatSidebar({
               <div
                 key={chat.id}
                 onClick={() => onSelectChat(chat.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  onDeleteChat(chat.id);
+                }}
                 className={`w-full text-left px-3 py-3 my-1 rounded-xl flex items-center gap-3 transition cursor-pointer ${
                   isActive
                     ? "bg-foreground text-background"

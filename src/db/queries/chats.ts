@@ -48,3 +48,15 @@ export async function getChatById(chatId: string) {
 
   return result[0] ?? null;
 }
+
+/**
+ * Hard-deletes a chat. Cascade removes memberships, messages, reactions, etc.
+ */
+export async function deleteChat(chatId: string) {
+  const [deleted] = await db
+    .delete(chats)
+    .where(eq(chats.id, chatId))
+    .returning();
+
+  return deleted ?? null;
+}

@@ -78,10 +78,22 @@ export async function joinCallSession(
       },
     });
 
-  await db
-    .update(callSessions)
-    .set({ status: "active", startedAt: sql`coalesce(${callSessions.startedAt}, now())` })
-    .where(eq(callSessions.id, callId));
+  const [{ joinedCount }] = await db
+    .select({ joinedCount: sql<number>`count(*)::int` })
+    .from(callParticipants)
+    .where(
+      and(eq(callParticipants.callId, callId), eq(callParticipants.state, "joined"))
+    );
+
+  if ((joinedCount ?? 0) >= 2) {
+    await db
+      .update(callSessions)
+      .set({
+        status: "active",
+        startedAt: sql`coalesce(${callSessions.startedAt}, now())`,
+      })
+      .where(eq(callSessions.id, callId));
+  }
 
   const [participant] = await db
     .select()

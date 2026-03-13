@@ -9,6 +9,7 @@ import { groupReactions } from "@/store/chatStore";
 import { useScreenShare } from "@/hooks/useScreenShare";
 import { useVoiceCall } from "@/hooks/useVoiceCall";
 import NewChatModal from "@/components/NewChatModal";
+import DeleteChatDialog from "@/components/chat/DeleteChatDialog";
 import ScreenShareViewer from "@/components/ScreenShareViewer";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -37,6 +38,7 @@ export default function ChatPage() {
     sendMessage,
     editMessage,
     deleteMessage,
+    deleteChat,
     toggleReaction,
     refreshChats,
     joinChat,
@@ -48,6 +50,7 @@ export default function ChatPage() {
     isIncomingShare,
     presenter,
     error: shareError,
+    remoteStream,
     startSharing,
     stopSharing,
     rejectShare,
@@ -85,6 +88,7 @@ export default function ChatPage() {
   const [highlightedMessageId, setHighlightedMessageId] = useState<
     string | null
   >(null);
+  const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -266,6 +270,7 @@ export default function ChatPage() {
           onDecline={handleDecline}
           onNewChat={handleNewChat}
           onLogout={handleLogout}
+          onDeleteChat={setDeletingChatId}
         />
       </aside>
 
@@ -285,6 +290,7 @@ export default function ChatPage() {
             onDecline={handleDecline}
             onNewChat={handleNewChat}
             onLogout={handleLogout}
+            onDeleteChat={setDeletingChatId}
           />
         </SheetContent>
       </Sheet>
@@ -520,9 +526,23 @@ export default function ChatPage() {
         }}
       />
 
+      {(() => {
+        const deletingChat = deletingChatId ? chats.find((c) => c.id === deletingChatId) : null;
+        return (
+          <DeleteChatDialog
+            open={!!deletingChat}
+            chatName={deletingChat?.name ?? ""}
+            isAdmin={deletingChat?.role === "admin"}
+            onClose={() => setDeletingChatId(null)}
+            onDelete={(mode) => deleteChat(deletingChatId!, mode)}
+          />
+        );
+      })()}
+
       <ScreenShareViewer
         isActive={shareStatus === "viewing"}
         presenterName={presenter?.name || null}
+        remoteStream={remoteStream}
         onClose={rejectShare}
       />
     </div>

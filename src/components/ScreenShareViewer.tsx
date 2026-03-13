@@ -7,38 +7,29 @@ import { Badge } from "@/components/ui/badge";
 interface ScreenShareViewerProps {
   isActive: boolean;
   presenterName: string | null;
+  remoteStream: MediaStream | null;
   onClose: () => void;
 }
 
-export default function ScreenShareViewer({ isActive, presenterName, onClose }: ScreenShareViewerProps) {
+export default function ScreenShareViewer({ isActive, presenterName, remoteStream, onClose }: ScreenShareViewerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
-    if (!isActive || !videoRef.current) return;
+    if (!videoRef.current) return;
+    videoRef.current.srcObject = isActive && remoteStream ? remoteStream : null;
+  }, [isActive, remoteStream]);
 
-    // Get the remote video element from the hook
-    const remoteVideo = (window as any).__screenShareVideoElement as HTMLVideoElement;
-    
-    if (remoteVideo && remoteVideo.srcObject) {
-      videoRef.current.srcObject = remoteVideo.srcObject;
-    }
-
-    // Listen for fullscreen changes
+  useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
-
     document.addEventListener('fullscreenchange', handleFullscreenChange);
-
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-    };
-  }, [isActive]);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   const toggleFullscreen = async () => {
     if (!videoRef.current) return;
-
     try {
       if (!document.fullscreenElement) {
         await videoRef.current.requestFullscreen();
