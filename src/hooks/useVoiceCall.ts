@@ -588,24 +588,9 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
 
   const hangUp = useCallback(() => {
     if (!userId) return;
-    if (chatId && callIdRef.current) {
-      const endpoint = isHostRef.current
-        ? `/api/chat/${chatId}/call`
-        : `/api/chat/${chatId}/call/${callIdRef.current}/participants`;
-      fetch(endpoint, { method: "DELETE" }).catch(() => {});
-    }
     sendSignal({ type: "call-end", from: userId });
-    // Show "ended" briefly so user gets visual feedback
-    const hadCall = callStatusRef.current !== "idle";
-    cleanupCall();
-    if (hadCall) {
-      setCallStatus("ended");
-      endedTimerRef.current = setTimeout(() => {
-        endedTimerRef.current = null;
-        setCallStatus("idle");
-      }, 1500);
-    }
-  }, [userId, chatId, sendSignal, cleanupCall]);
+    showEnded();
+  }, [userId, sendSignal, showEnded]);
 
   const toggleMute = useCallback(() => {
     setIsMuted((prev) => {

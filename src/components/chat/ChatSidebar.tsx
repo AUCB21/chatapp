@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { EllipsisVertical, LogOut, Moon, Plus, Search, Sun } from "lucide-react";
+import { Bell, BellOff, EllipsisVertical, LogOut, Moon, Plus, Search, Sun } from "lucide-react";
 import type { ChatWithRole } from "@/store/chatStore";
 
 interface ChatSidebarProps {
@@ -27,6 +27,8 @@ interface ChatSidebarProps {
   onNewChat: () => void;
   onLogout: () => void;
   onDeleteChat: (chatId: string, mode: "for_me" | "for_everyone") => void;
+  mutedChats: Set<string>;
+  onToggleMute: (chatId: string) => void;
 }
 
 function getAvatarColor(name: string) {
@@ -57,6 +59,8 @@ export default function ChatSidebar({
   onNewChat,
   onLogout,
   onDeleteChat,
+  mutedChats,
+  onToggleMute,
 }: ChatSidebarProps) {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -216,6 +220,7 @@ export default function ChatSidebar({
             const isActive = chat.id === activeChatId;
             const avatarColor = getAvatarColor(chat.name);
             const unread = unreadCounts[chat.id] ?? 0;
+            const isMuted = mutedChats.has(chat.id);
 
             return (
               <div
@@ -248,8 +253,13 @@ export default function ChatSidebar({
                   </p>
                 </div>
 
+                {/* Muted indicator */}
+                {isMuted && !isActive && (
+                  <BellOff className="w-3 h-3 shrink-0 text-muted-foreground/50 group-hover/item:hidden" />
+                )}
+
                 {/* Unread badge — hidden when dropdown is visible */}
-                {unread > 0 && !isActive && (
+                {unread > 0 && !isActive && !isMuted && (
                   <span className="shrink-0 min-w-[1.2rem] h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[0.6rem] font-semibold flex items-center justify-center tabular-nums group-hover/item:hidden">
                     {unread > 99 ? "99+" : unread}
                   </span>
@@ -266,6 +276,13 @@ export default function ChatSidebar({
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" side="bottom">
+                      <DropdownMenuItem onClick={() => onToggleMute(chat.id)}>
+                        {isMuted ? (
+                          <><Bell className="w-3.5 h-3.5 mr-1.5" />Unmute</>
+                        ) : (
+                          <><BellOff className="w-3.5 h-3.5 mr-1.5" />Mute</>
+                        )}
+                      </DropdownMenuItem>
                       <DropdownMenuItem
                         variant="destructive"
                         onClick={() => onDeleteChat(chat.id, "for_me")}

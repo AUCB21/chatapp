@@ -28,6 +28,7 @@ interface ChatHeaderProps {
   onStartSharing: (options: import("@/lib/webrtc").ScreenShareOptions) => Promise<void>;
   onStopSharing: () => void;
   onBack: () => void;
+  onToggleSearch: () => void;
 }
 
 function getAvatarColor(name: string) {
@@ -65,6 +66,7 @@ export default function ChatHeader({
   onStartSharing,
   onStopSharing,
   onBack,
+  onToggleSearch,
 }: ChatHeaderProps) {
   const avatarColor = getAvatarColor(chat.name);
   const isOnline = onlineUsers.length > 0;
@@ -107,6 +109,16 @@ export default function ChatHeader({
       </div>
 
       <div className="flex items-center gap-1.5 shrink-0">
+        {/* Search toggle */}
+        <button
+          onClick={onToggleSearch}
+          className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-muted transition-colors"
+          aria-label="Search messages"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8" /><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" />
+          </svg>
+        </button>
         <VoiceCallControls
           chatId={chat.id}
           canCall={!isPending && canWrite}

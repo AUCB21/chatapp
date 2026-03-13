@@ -1,13 +1,19 @@
-import { and, eq, asc, isNull, sql } from "drizzle-orm";
+import { and, eq, asc, desc, lt, isNull, sql } from "drizzle-orm";
 import { db } from "../index";
 import { messages, memberships, readReceipts, reactions } from "../schema";
 
+const DEFAULT_PAGE_SIZE = 50;
+
 /**
- * Fetches all messages for a chat (excluding soft-deleted).
- * Single condition: user must be a member.
- * Returns empty array if not a member (no error leak).
+ * Fetches messages for a chat with optional cursor-based pagination.
+ * Includes soft-deleted messages so recipients see "[Message deleted]".
+ * Returns at most `limit` messages ordered oldest→newest.
  */
-export async function getMessages(userId: string, chatId: string) {
+export async function getMessages(
+  userId: string,
+  chatId: string,
+  options?: { before?: Date; limit?: number }
+) {
   const membership = await db
     .select({ role: memberships.role })
     .from(memberships)
@@ -16,11 +22,21 @@ export async function getMessages(userId: string, chatId: string) {
 
   if (!membership[0]) return [];
 
-  return db
+  const limit = options?.limit ?? DEFAULT_PAGE_SIZE;
+
+  const rows = await db
     .select()
     .from(messages)
-    .where(and(eq(messages.chatId, chatId), isNull(messages.deletedAt)))
-    .orderBy(asc(messages.createdAt));
+    .where(
+      options?.before
+        ? and(eq(messages.chatId, chatId), lt(messages.createdAt, options.before))
+        : eq(messages.chatId, chatId)
+    )
+    .orderBy(desc(messages.createdAt))
+    .limit(limit);
+
+  // Return in ascending (oldest first) order for display
+  return rows.reverse();
 }
 
 /**
@@ -126,6 +142,14 @@ export async function markRead(chatId: string, userId: string) {
       target: [readReceipts.userId, readReceipts.chatId],
       set: { lastReadAt: new Date() },
     });
+
+  // Reset unread counter on the membership row
+  await db
+    .update(memberships)
+    .set({ unreadCount: 0 })
+    .where(
+      and(eq(memberships.chatId, chatId), eq(memberships.userId, userId))
+    );
 }
 
 /**
@@ -195,6 +219,32 @@ export async function removeReaction(
 }
 
 /**
+ * Search messages by content (case-insensitive ilike).
+ */
+export async function searchMessages(userId: string, chatId: string, query: string) {
+  const membership = await db
+    .select({ role: memberships.role })
+    .from(memberships)
+    .where(and(eq(memberships.userId, userId), eq(memberships.chatId, chatId)))
+    .limit(1);
+
+  if (!membership[0]) return [];
+
+  return db
+    .select()
+    .from(messages)
+    .where(
+      and(
+        eq(messages.chatId, chatId),
+        isNull(messages.deletedAt),
+        sql`${messages.content} ilike ${"%" + query + "%"}`
+      )
+    )
+    .orderBy(desc(messages.createdAt))
+    .limit(50);
+}
+
+/**
  * Get thread replies for a parent message.
  */
 export async function getThreadReplies(parentId: string) {
@@ -216,3 +266,4 @@ export async function getReplyCount(parentId: string) {
 
   return result?.count ?? 0;
 }
+

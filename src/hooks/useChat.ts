@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import { useChatStore, selectActiveMessages, selectActiveReactions } from "@/store/chatStore";
 import type { ChatState } from "@/store/chatStore";
 import { supabase } from "@/lib/supabaseClient";
@@ -21,16 +21,19 @@ interface UseChatReturn {
   canWrite: boolean;
   loading: ChatState["loading"];
   error: ChatState["error"];
+  isLoadingMore: boolean;
+  hasMoreMessages: boolean;
 
   // Actions
   setActiveChat: (chatId: string | null) => void;
   sendMessage: (content: string, parentId?: string) => Promise<void>;
   retrySend: (failedMessageId: string) => Promise<void>;
   editMessage: (messageId: string, content: string) => Promise<void>;
-  deleteMessage: (messageId: string) => Promise<void>;
+  deleteMessage: (messageId: string, mode?: "for_me" | "for_everyone") => Promise<void>;
   deleteChat: (chatId: string, mode: "for_me" | "for_everyone") => Promise<void>;
   toggleReaction: (messageId: string, emoji: string) => Promise<void>;
   refreshChats: () => Promise<void>;
+  loadMoreMessages: () => Promise<void>;
   joinChat: (chatId: string) => Promise<void>;
   declineChat: (chatId: string) => Promise<void>;
 }
@@ -42,16 +45,21 @@ export function useChat(): UseChatReturn {
   const userId = useSessionStore((s) => s.user?.id ?? null);
   const userEmail = useSessionStore((s) => s.user?.email ?? null);
 
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
   const {
     chats,
     activeChatId,
     loading,
     error,
+    hasMoreMessages,
     setChats,
     setActiveChat: _setActiveChat,
     setMessages,
+    prependMessages,
     appendMessage,
     updateMessage,
+    removeMessage,
     setReactions,
     addReaction: addReactionToStore,
     removeReaction: removeReactionFromStore,
@@ -59,6 +67,8 @@ export function useChat(): UseChatReturn {
     removeMembership,
     setLoading,
     setError,
+    setHasMore,
+    setUnreadCounts,
   } = useChatStore();
 
   const messages = useChatStore(selectActiveMessages);
@@ -94,7 +104,8 @@ export function useChat(): UseChatReturn {
       const res = await fetch("/api/chat");
       if (!res.ok) throw new Error("Failed to fetch chats");
       const { data } = await res.json();
-      setChats(data);
+      setChats(data.chats ?? data);
+      if (data.unreadCounts) setUnreadCounts(data.unreadCounts);
     } catch (e) {
       setError("chats", e instanceof Error ? e.message : "Unknown error");
     } finally {
@@ -103,12 +114,14 @@ export function useChat(): UseChatReturn {
   }, []);
 
   useEffect(() => {
+    if (!isReady || !userId) return;
     refreshChats();
-  }, []);
+  }, [isReady, userId]);
 
-  // --- Global background listener: unread counts + notifications + ping ---
+  // --- Global background listener: badges + notifications + ping ---
   // Watches ALL new messages across every chat the user belongs to.
-  // Per-chat subscription (below) handles UI display; this one handles side-effects only.
+  // The memberships UPDATE subscription (below) carries the authoritative DB
+  // count and will override the client-side increment when it fires.
 
   useEffect(() => {
     if (!isReady || !userId) return;
@@ -129,12 +142,45 @@ export function useChat(): UseChatReturn {
           const state = useChatStore.getState();
           const isActiveChat = state.activeChatId === chatId;
 
-          // Increment unread badge for any non-active chat
+          // Active chat: append message to the view as a fallback
+          // (the per-chat postgres_changes subscription may miss events
+          // when the messages SELECT RLS policy has sub-queries)
+          if (isActiveChat) {
+            const incoming: Message = {
+              id: raw.id as string,
+              chatId: raw.chat_id as string,
+              userId: raw.user_id as string,
+              content: raw.content as string,
+              status: (raw.status as "sent" | "delivered" | "read") || "sent",
+              parentId: (raw.parent_id as string) || null,
+              editedAt: raw.edited_at ? new Date(raw.edited_at as string) : null,
+              deletedAt: raw.deleted_at ? new Date(raw.deleted_at as string) : null,
+              createdAt: new Date(raw.created_at as string),
+            };
+            appendMessage(chatId, incoming);
+
+            // Mark as read since user is looking at the chat
+            if (document.visibilityState === "visible") {
+              fetch(`/api/chat/${chatId}/messages`, { method: "PUT" }).catch(() => {});
+            }
+          }
+
+          // Client-side badge increment (DB trigger + memberships UPDATE
+          // will correct this to the authoritative count when it arrives)
           if (!isActiveChat) {
             state.incrementUnread(chatId);
           }
 
-          // Browser notification + ping when tab is hidden
+          // Check mute status
+          const isMuted = (() => {
+            try {
+              const stored = localStorage.getItem("muted-chats");
+              return stored ? (JSON.parse(stored) as string[]).includes(chatId) : false;
+            } catch { return false; }
+          })();
+          if (isMuted) return;
+
+          // Browser notification + ping
           if (document.visibilityState !== "visible") {
             const chat = state.chats.find((c) => c.id === chatId);
             const title = chat?.name ?? "New message";
@@ -147,22 +193,17 @@ export function useChat(): UseChatReturn {
                   body: content.length > 80 ? content.slice(0, 80) + "…" : content,
                   tag: `msg-${chatId}`,
                 });
-              } catch {
-                // Notification blocked or unsupported
-              }
+              } catch { /* */ }
             }
             playPing();
           } else if (!isActiveChat) {
-            // Tab visible but different chat — just ping
             playPing();
           }
         }
       )
       .subscribe();
 
-    return () => {
-      channel.unsubscribe();
-    };
+    return () => { channel.unsubscribe(); };
   }, [isReady, userId]);
 
   // --- Refresh chat list on relevant DB changes ---
@@ -179,12 +220,65 @@ export function useChat(): UseChatReturn {
       .on(
         "postgres_changes",
         {
-          event: "*",
+          event: "INSERT",
           schema: "public",
           table: "memberships",
           filter: `user_id=eq.${userId}`,
         },
         () => { refreshChats(); }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "memberships",
+          filter: `user_id=eq.${userId}`,
+        },
+        () => { refreshChats(); }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "memberships",
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>;
+          const chatId = row.chat_id as string;
+          const count = row.unread_count as number;
+          const state = useChatStore.getState();
+          const isActiveChat = state.activeChatId === chatId;
+
+          // Skip everything for the active chat (user is looking at it)
+          if (isActiveChat) return;
+
+          const prevCount = state.unreadCounts[chatId] ?? 0;
+          state.setUnreadCount(chatId, count);
+
+          // New messages arrived → sound + notification
+          if (count > prevCount) {
+            const isMuted = (() => {
+              try {
+                const stored = localStorage.getItem("muted-chats");
+                return stored ? (JSON.parse(stored) as string[]).includes(chatId) : false;
+              } catch { return false; }
+            })();
+            if (isMuted) return;
+
+            const chat = state.chats.find((c) => c.id === chatId);
+            const title = chat?.name ?? "New message";
+
+            if (document.visibilityState !== "visible") {
+              if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+                try { new Notification(title, { body: "New message", tag: `msg-${chatId}` }); } catch { /* */ }
+              }
+            }
+            playPing();
+          }
+        }
       )
       .on(
         "postgres_changes",
@@ -235,11 +329,20 @@ export function useChat(): UseChatReturn {
           if (!res.ok) throw new Error("Failed to fetch messages");
 
           const { data } = await res.json();
+          const deletedForMe = (() => {
+            try {
+              const key = `deleted-for-me-${userId}`;
+              const stored = localStorage.getItem(key);
+              return stored ? new Set<string>(JSON.parse(stored)) : new Set<string>();
+            } catch { return new Set<string>(); }
+          })();
           if (data.messages) {
-            setMessages(activeId, data.messages);
+            setMessages(activeId, data.messages.filter((m: { id: string }) => !deletedForMe.has(m.id)));
             setReactions(activeId, data.reactions ?? []);
+            setHasMore(activeId, data.hasMore ?? false);
           } else {
-            setMessages(activeId, data);
+            setMessages(activeId, (data as Message[]).filter((m) => !deletedForMe.has(m.id)));
+            setHasMore(activeId, false);
           }
         } catch (e) {
           setError("messages", e instanceof Error ? e.message : "Unknown error");
@@ -557,8 +660,25 @@ export function useChat(): UseChatReturn {
   // --- Delete a message ---
 
   const deleteMessageFn = useCallback(
-    async (messageId: string) => {
+    async (messageId: string, mode: "for_me" | "for_everyone" = "for_everyone") => {
       if (!activeChatId) return;
+
+      if (mode === "for_me") {
+        removeMessage(activeChatId, messageId);
+        // Persist so message doesn't reappear on reload
+        if (userId) {
+          try {
+            const key = `deleted-for-me-${userId}`;
+            const stored = localStorage.getItem(key);
+            const ids: string[] = stored ? JSON.parse(stored) : [];
+            if (!ids.includes(messageId)) {
+              ids.push(messageId);
+              localStorage.setItem(key, JSON.stringify(ids));
+            }
+          } catch { /* ignore */ }
+        }
+        return;
+      }
 
       const prev = useChatStore.getState().messages[activeChatId]?.find((m) => m.id === messageId);
 
@@ -590,7 +710,7 @@ export function useChat(): UseChatReturn {
         if (prev) updateMessage(activeChatId, messageId, { content: prev.content, deletedAt: prev.deletedAt });
       }
     },
-    [activeChatId]
+    [activeChatId, removeMessage]
   );
 
   // --- Toggle reaction (add or remove) ---
@@ -679,6 +799,39 @@ export function useChat(): UseChatReturn {
     [activeChatId]
   );
 
+  // --- Load older messages (pagination) ---
+
+  const loadMoreMessages = useCallback(async () => {
+    if (!activeChatId || isLoadingMore) return;
+    const msgs = useChatStore.getState().messages[activeChatId];
+    if (!msgs || msgs.length === 0) return;
+
+    const oldest = msgs[0];
+    setIsLoadingMore(true);
+    try {
+      const res = await fetch(
+        `/api/chat/${activeChatId}/messages?before=${encodeURIComponent(oldest.createdAt.toISOString())}`
+      );
+      if (!res.ok) return;
+      const { data } = await res.json();
+      if (data.messages?.length > 0) {
+        const deletedForMe = (() => {
+          try {
+            const key = `deleted-for-me-${userId}`;
+            const stored = localStorage.getItem(key);
+            return stored ? new Set<string>(JSON.parse(stored)) : new Set<string>();
+          } catch { return new Set<string>(); }
+        })();
+        prependMessages(activeChatId, data.messages.filter((m: { id: string }) => !deletedForMe.has(m.id)));
+      }
+      setHasMore(activeChatId, data.hasMore ?? false);
+    } catch {
+      // non-fatal
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [activeChatId, isLoadingMore, prependMessages, setHasMore]);
+
   // --- Delete a chat ---
 
   const deleteChatFn = useCallback(
@@ -755,6 +908,8 @@ export function useChat(): UseChatReturn {
     _setActiveChat(chatId);
   }, []);
 
+  const hasMore = activeChatId ? (hasMoreMessages[activeChatId] ?? false) : false;
+
   return {
     chats,
     messages,
@@ -763,6 +918,8 @@ export function useChat(): UseChatReturn {
     canWrite,
     loading,
     error,
+    isLoadingMore,
+    hasMoreMessages: hasMore,
     setActiveChat,
     sendMessage,
     retrySend,
@@ -771,6 +928,7 @@ export function useChat(): UseChatReturn {
     deleteChat: deleteChatFn,
     toggleReaction,
     refreshChats,
+    loadMoreMessages,
     joinChat,
     declineChat,
   };

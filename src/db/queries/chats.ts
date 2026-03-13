@@ -13,6 +13,7 @@ export async function getAccessibleChats(userId: string) {
       name: chats.name,
       createdAt: chats.createdAt,
       role: memberships.role,
+      unreadCount: memberships.unreadCount,
     })
     .from(chats)
     .innerJoin(memberships, eq(memberships.chatId, chats.id))

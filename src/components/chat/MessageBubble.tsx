@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, useMemo, type ReactNode } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
+import { Pencil, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { Message } from "@/db/schema";
@@ -173,6 +174,9 @@ interface MessageBubbleProps {
   onReply: () => void;
   onJumpToMessage: (messageId: string) => void;
   onRetry?: () => void;
+  onEdit: () => void;
+  onDeleteForMe: () => void;
+  onDeleteForEveryone: () => void;
 }
 
 export default function MessageBubble({
@@ -197,11 +201,16 @@ export default function MessageBubble({
   onReply,
   onJumpToMessage,
   onRetry,
+  onEdit,
+  onDeleteForMe,
+  onDeleteForEveryone,
 }: MessageBubbleProps) {
+  const [deletePickerOpen, setDeletePickerOpen] = useState(false);
   const isFailed = msg.id.startsWith("failed-");
   const isEditing = editContent !== null;
   const isDeleted = !!msg.deletedAt;
   const isEdited = !!msg.editedAt && !isDeleted;
+
   const renderedContent = useMemo(
     () => renderMarkdownMessage(msg.content, isOwn),
     [msg.content, isOwn]
@@ -270,30 +279,32 @@ export default function MessageBubble({
                 : "bg-card border border-border rounded-bl-sm shadow-sm"
             } ${isDeleted ? "opacity-40 italic" : ""}`}
           >
-            <div className="space-y-1">{renderedContent}</div>
-            <div className="flex items-center gap-1.5 mt-1.5 justify-end">
-              {isEdited && (
-                <span className="text-[0.55rem] opacity-50 font-medium uppercase tracking-wider">edited</span>
-              )}
-              {isFailed && (
-                <button
-                  onClick={onRetry}
-                  className="text-[0.6rem] font-medium text-destructive-foreground/80 hover:text-destructive-foreground underline cursor-pointer"
-                >
-                  Failed — tap to retry
-                </button>
-              )}
-              {isOwn && !isOptimistic && !isFailed && !isDeleted && (
-                <span className="text-[0.65rem]">
-                  {msg.status === "read" ? (
-                    <span className="text-primary-foreground/70">✓✓</span>
-                  ) : msg.status === "delivered" ? (
-                    <span className="text-primary-foreground/50">✓✓</span>
-                  ) : (
-                    <span className="text-primary-foreground/30">✓</span>
-                  )}
-                </span>
-              )}
+            <div className="flex items-end gap-1.5">
+              <div className="space-y-1 min-w-0">{renderedContent}</div>
+              <div className="flex items-center gap-1 shrink-0 self-end mb-0.5">
+                {isEdited && (
+                  <span className="text-[0.55rem] opacity-50 font-medium uppercase tracking-wider">edited</span>
+                )}
+                {isFailed && (
+                  <button
+                    onClick={onRetry}
+                    className="text-[0.6rem] font-medium text-destructive-foreground/80 hover:text-destructive-foreground underline cursor-pointer"
+                  >
+                    Failed — tap to retry
+                  </button>
+                )}
+                {isOwn && !isOptimistic && !isFailed && !isDeleted && (
+                  <span className="text-[0.65rem]">
+                    {msg.status === "read" ? (
+                      <span className="text-primary-foreground/70">✓✓</span>
+                    ) : msg.status === "delivered" ? (
+                      <span className="text-primary-foreground/50">✓✓</span>
+                    ) : (
+                      <span className="text-primary-foreground/30">✓</span>
+                    )}
+                  </span>
+                )}
+              </div>
             </div>
             <div
               className={`absolute top-1/2 -translate-y-1/2 text-[0.55rem] font-medium text-muted-foreground opacity-0 group-hover/message:opacity-100 transition-opacity whitespace-nowrap ${
@@ -305,6 +316,105 @@ export default function MessageBubble({
                 minute: "2-digit",
               })}
             </div>
+
+            {/* Inline action bar — appears above bubble on row hover */}
+            {!isDeleted && !isAnyEditing && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className={`absolute bottom-full mb-1 ${
+                  isOwn ? "right-0" : "left-0"
+                } z-10 flex items-center gap-0.5 bg-popover border border-border shadow-md rounded-xl px-1 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity`}
+              >
+                {/* React */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); setDeletePickerOpen(false); onSetPickerOpen(!isPickerOpen); }}
+                  className="w-7 h-7 rounded-lg hover:bg-muted transition-colors flex items-center justify-center text-sm"
+                  title="React"
+                >
+                  😊
+                </button>
+
+                {/* Reply */}
+                {canWrite && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onReply(); onSetPickerOpen(false); }}
+                    className="w-7 h-7 rounded-lg hover:bg-muted transition-colors flex items-center justify-center text-muted-foreground"
+                    title="Reply"
+                  >
+                    <span className="text-sm">↩</span>
+                  </button>
+                )}
+
+                <div className="w-px h-4 bg-border mx-0.5" />
+
+                {/* Edit — own messages only */}
+                {isOwn && canWrite && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onEdit(); onSetPickerOpen(false); }}
+                    className="w-7 h-7 rounded-lg hover:bg-muted transition-colors flex items-center justify-center text-muted-foreground"
+                    title="Edit"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                )}
+
+                {/* Delete — opens inline picker */}
+                <div className="relative">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setDeletePickerOpen((v) => !v); onSetPickerOpen(false); }}
+                    className={`w-7 h-7 rounded-lg transition-colors flex items-center justify-center ${deletePickerOpen ? "bg-destructive/10 text-destructive" : "hover:bg-muted text-muted-foreground/60 hover:text-muted-foreground"}`}
+                    title="Delete"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+
+                  {deletePickerOpen && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className={`absolute -top-1 ${isOwn ? "right-8" : "left-8"} z-30 flex flex-col gap-0.5 px-1 py-1 rounded-xl bg-popover border border-border shadow-lg shadow-black/10 animate-in fade-in slide-in-from-bottom-2 duration-150 whitespace-nowrap`}
+                    >
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setDeletePickerOpen(false); onDeleteForMe(); }}
+                        className="px-3 py-1.5 text-xs rounded-lg hover:bg-muted transition-colors text-left text-foreground"
+                      >
+                        Delete for me
+                      </button>
+                      {isOwn && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setDeletePickerOpen(false); onDeleteForEveryone(); }}
+                          className="px-3 py-1.5 text-xs rounded-lg hover:bg-destructive/10 hover:text-destructive transition-colors text-left"
+                        >
+                          Delete for everyone
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Emoji picker popup */}
+            {isPickerOpen && !isDeleted && !isAnyEditing && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className={`absolute -top-20 ${
+                  isOwn ? "right-0" : "left-0"
+                } z-20 flex items-center gap-0.5 px-2 py-1.5 rounded-2xl bg-popover border border-border shadow-lg shadow-black/10 animate-in fade-in slide-in-from-bottom-2 duration-150`}
+              >
+                {QUICK_EMOJIS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    onClick={() => {
+                      onToggleReaction(emoji);
+                      onSetPickerOpen(false);
+                    }}
+                    className="text-base w-8 h-8 rounded-xl hover:bg-muted transition-colors flex items-center justify-center"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -333,61 +443,6 @@ export default function MessageBubble({
               );
             })}
           </div>
-        )}
-
-        {/* Reaction trigger + picker */}
-        {!isDeleted && !isAnyEditing && (
-          <>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onSetPickerOpen(!isPickerOpen);
-              }}
-              className={`absolute top-1/2 -translate-y-1/2 ${
-                isOwn ? "-left-8" : "-right-8"
-              } opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 rounded-full bg-muted hover:bg-border flex items-center justify-center text-sm`}
-              title="React"
-            >
-              😊
-            </button>
-
-            {isPickerOpen && (
-              <div
-                onClick={(e) => e.stopPropagation()}
-                className={`absolute -top-12 ${
-                  isOwn ? "right-0" : "left-0"
-                } z-10 flex items-center gap-0.5 px-2 py-1.5 rounded-2xl bg-popover border border-border shadow-lg shadow-black/10 animate-in fade-in slide-in-from-bottom-2 duration-150`}
-              >
-                {QUICK_EMOJIS.map((emoji) => (
-                  <button
-                    key={emoji}
-                    onClick={() => {
-                      onToggleReaction(emoji);
-                      onSetPickerOpen(false);
-                    }}
-                    className="text-base w-8 h-8 rounded-xl hover:bg-muted transition-colors flex items-center justify-center"
-                  >
-                    {emoji}
-                  </button>
-                ))}
-                {canWrite && (
-                  <>
-                    <div className="w-px h-6 bg-border mx-0.5" />
-                    <button
-                      onClick={() => {
-                        onReply();
-                        onSetPickerOpen(false);
-                      }}
-                      className="text-xs px-2 h-8 rounded-xl hover:bg-muted transition-colors text-muted-foreground flex items-center gap-1"
-                    >
-                      <span>↩</span>
-                      <span className="hidden sm:inline">Reply</span>
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </>
         )}
       </div>
     </div>

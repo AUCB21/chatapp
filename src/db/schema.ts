@@ -7,6 +7,7 @@ import {
   primaryKey,
   index,
   boolean,
+  integer,
 } from "drizzle-orm/pg-core";
 
 // --- Enums ---
@@ -60,6 +61,7 @@ export const memberships = pgTable(
       .notNull()
       .references(() => chats.id, { onDelete: "cascade" }),
     role: memberRoleEnum("role").notNull().default("read"),
+    unreadCount: integer("unread_count").notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => ({

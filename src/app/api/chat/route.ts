@@ -20,6 +20,12 @@ export async function GET() {
       getPendingInvitationsForEmail(user.email ?? ""),
     ]);
 
+    // Build unreadCounts from the membership column (populated by DB trigger)
+    const unreadCounts: Record<string, number> = {};
+    for (const c of memberChats) {
+      if (c.unreadCount > 0) unreadCounts[c.id] = c.unreadCount;
+    }
+
     const memberChatIds = new Set(memberChats.map((c) => c.id));
 
     const pendingChats = pendingInvites
@@ -31,7 +37,7 @@ export async function GET() {
         role: "pending" as const,
       }));
 
-    return ok([...memberChats, ...pendingChats]);
+    return ok({ chats: [...memberChats, ...pendingChats], unreadCounts });
   } catch (error) {
     return serverError("Failed to fetch chats", error);
   }

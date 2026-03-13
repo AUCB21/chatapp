@@ -1,77 +1,95 @@
 # EPS Chat App — What to Build Next
 
-## 🔵 Lower Priority — Polish
-
-### ~~1. Invite Link Expiry Enforcement~~ DONE
-~~No UI or server-side enforcement of invite link expiry beyond whatever is stored in the DB. Should show a clear "This link has expired" page and prevent join attempts past the expiry date.~~
-
-### 2. Mute / Unread State — PENDING TEST
-No per-chat notification control. Users cannot mute noisy chats or see an unread badge count. Needs a `muted` flag per membership row and a client-side unread counter driven by Realtime events.
-
-### ~~3. Retry on Failed Optimistic Send~~ DONE — PENDING TEST
-~~Failed messages (network error during optimistic send) currently disappear silently. Should persist in the UI with a "Failed — tap to retry" state and a re-send action.~~
-
 ---
 
-## 🟡 Medium Priority — Noticeable product gaps
+## ✅ Completed
 
-### ~~4. Real Read Receipt Logic~~ DONE — PENDING TEST
-~~`msg.status` is rendered (✓✓ ticks) in `MessageBubble` but is never actually updated to `"read"` anywhere in the codebase. Needs an update call when a message scrolls into view (IntersectionObserver) and a Realtime broadcast back to the sender.~~
+### ~~1. Invite Link Expiry Enforcement~~ DONE
+~~No UI or server-side enforcement of invite link expiry.~~ Shows "This link has expired" page and prevents join attempts past expiry date.
 
-### 5. Member Management UI — PENDING TEST
-No way to see who is in a chat, add members after creation, or view/change roles. Needs a members panel (side sheet or modal) wired to the existing `/api/chat/[chatId]/members` endpoint.
+### ~~2. Mute / Unread State~~ DONE
+~~No per-chat notification control.~~ localStorage-based per-chat mute (sidebar dropdown, BellOff indicator). Muted chats suppress notifications and ping. Unread badge fetched from DB on load (`read_receipts`-based query) and incremented in real time via global listener. Document title reflects total unread count.
 
-### ~~6. Reconnection Feedback~~ DONE — PENDING TEST
-~~Silent failure when the Supabase Realtime connection drops. Should show a dismissible banner ("Reconnecting…" / "Back online") so users know their messages may not be delivered.~~
+### ~~3. Retry on Failed Optimistic Send~~ DONE
+~~Failed messages disappear silently.~~ Persisted in UI with "Failed — tap to retry" state and re-send action.
 
-### 7. Message Search — PENDING TEST
-No in-chat search at all. Needs a search input in the header or sidebar that queries messages by content (full-text search via Postgres `tsvector` or `ilike`).
+### ~~4. Real Read Receipt Logic~~ DONE
+~~`msg.status` never updated to `"read"`.~~ `markRead` called on initial message load; `read_receipts` table updated server-side.
 
-### ~~8. Forgot Password Handler~~ DONE — PENDING TEST
-~~Add a dedicated **Forgot Password** view/flow that calls Supabase's password reset method, with confirmation feedback and redirect handling for reset completion.~~
+### ~~6. Reconnection Feedback~~ DONE
+~~Silent failure on Realtime drop.~~ Banner shows "Reconnecting…" / "Back online" via `useConnectionStatus`.
 
-### 9. Me-to-Me Personal Chat — PENDING TEST
-Add a self-chat feature so each user has a personal conversation space (notes/saved messages). This should appear as a dedicated chat and work with normal message, media, and search flows.
+### ~~7. Message Search~~ DONE
+~~No in-chat search.~~ Search toggle in ChatHeader; client-side filter over loaded messages. API supports `?search=` for server-side `ilike` queries.
 
-### 10. Missed Call Message in Chat — PENDING TEST
-When a call goes unanswered or is declined, insert a system-style message into the chat timeline (e.g., "Missed voice call" / "Missed video call") with a timestamp and a callback button. Requires a `type` field on messages (or a dedicated `call_events` table) to distinguish call events from regular text. Depends on the call feature being in place first.
+### ~~8. Forgot Password Handler~~ DONE
+~~No password reset flow.~~ Dedicated Forgot Password view calling Supabase reset method with confirmation and redirect.
 
-### 11. Per-User Supabase Storage Hardening — PENDING TEST
-After attachment support ships, harden Supabase Storage for per-user isolation: bucket policy review, path conventions, quotas/limits, and cleanup lifecycle.
+### ~~10. Missed Call~~ DONE (reverted sentinel approach)
+~~Missed call message sent as `__MISSED_CALL__` sentinel.~~ Reverted: now uses existing `showEnded("Call was declined")` feedback in the CallModal. No message inserted.
 
-### 20. User Details / Chat Field Height Alignment — PENDING TEST
-Fix misalignment between the **User details area** and the **chat text field** heights so both rows align consistently across desktop and mobile breakpoints.
+### ~~12. Typing Indicator UI~~ DONE
+~~`usePresence` / `typingUsers` wired but not rendered.~~ "Alice is typing…" shown above message input.
+
+### ~~13. Date Separators~~ DONE
+~~No day grouping.~~ "Today", "Yesterday", "March 10" separators derived from `created_at`.
+
+### ~~14. Header Back-To-Home Behavior~~ DONE
+~~Back arrow toggled sidebar instead of clearing active chat.~~ Now clears `activeChatId` on all screen sizes.
+
+### ~~15. Message Pagination~~ DONE
+~~All messages loaded at once.~~ Initial load fetches last **25** messages. "Load older messages" button + auto-load on scroll-to-top via `?before=<ISO8601>`, preserving scroll position.
+
+### ~~17. Single Message Deletion Modes~~ DONE
+~~No per-message deletion control.~~ "Delete for me" (local store + localStorage persistence across reloads) and "Delete for everyone" (soft-delete in DB, shows "[Message deleted]" for all members).
+
+### ~~18. Push Notifications~~ DONE
+~~No browser notification when tab unfocused.~~ Web Notifications API triggered on incoming Realtime events. Ping sound fixed to await AudioContext resume before playing.
+
+### ~~19. Notification Icon Reliability / Speed~~ DONE
+~~Unread badge inconsistent / slow.~~ Global Realtime subscription drives instant unread badges. DB-backed initial unread counts loaded on startup. Document title counter e.g. "(3) EPS Chat".
+
+### ~~20. User Details / Chat Field Height Alignment~~ DONE
+~~Height misalignment between user details and message input.~~ Fixed: `py-2.5` → `py-2` on message input form.
+
+### ~~21. Logout Icon Color~~ DONE
+~~Logout icon had no visual danger cue.~~ Changed to reddish tone.
+
+### ~~22. Call Button Font Consistency~~ DONE
+~~Call button used inconsistent font styling.~~ Updated to match project font.
+
+### ~~23. Global Incoming Call Modal~~ DONE
+~~CallModal only showed when inside the relevant chat.~~ Global `call_sessions` postgres_changes listener detects ringing calls in any member chat; `useVoiceCall` receives the correct chatId regardless of which chat is open.
 
 ---
 
 ## 🔴 High Priority — Users will hit these immediately
 
-### ~~12. Typing Indicator UI~~ DONE (was already implemented) — PENDING TEST
-~~The hooks (`usePresence`, `typingUsers`) already exist and are wired up in `page.tsx`. It just needs a render — a ~20-line addition showing "Alice is typing…" above the message input when another member is active.~~
+### 16. File / Image Sharing
+The `<Paperclip>` button is rendered but does nothing. Needs a file picker, upload to Supabase Storage, and a rendered preview/download in `MessageBubble`. Requires a new `attachments` column or table. Blocked by item 11 (storage hardening) if targeting production.
 
-### ~~13. Date Separators~~ DONE — PENDING TEST
-~~Show "Today", "Yesterday", and "March 10" between messages grouped by day. Pure UI, no backend changes needed — derive from each message's `created_at` timestamp.~~
+---
 
-### ~~14. Header Back-To-Home Behavior~~ DONE — PENDING TEST
-~~When a chat is open, the left arrow in `ChatHeader` should return to "select chat" mode (clear `activeChatId`) instead of only opening/toggling sidebar behavior. This should work consistently on mobile and desktop layouts.~~
+## 🟡 Medium Priority — Noticeable product gaps
 
-### 15. Message Pagination — PENDING TEST
-Currently loads all messages at once via a single query. Will degrade severely with any real usage volume. Needs cursor-based pagination (load older messages on scroll-to-top) and a virtual/windowed list.
+### 5. Member Management UI
+No way to see who is in a chat, add members after creation, or view/change roles. Needs a members panel (side sheet or modal) wired to the existing `/api/chat/[chatId]/members` endpoint.
 
-### 16. File / Image Sharing — PENDING TEST
-The `<Paperclip>` button is rendered but does nothing. Needs a file picker, upload to Supabase Storage, and a rendered preview/download in `MessageBubble`. Requires a new `attachments` column or table.
+### 9. Me-to-Me Personal Chat
+Add a self-chat so each user has a personal notes/saved-messages space. Should appear as a pinned chat and work with normal message and search flows.
 
-### 17. Single Message Deletion Modes — PENDING TEST
-Add per-message deletion options using the same dual logic pattern: **delete for me** and **delete for everybody**. If deleted for everybody, the message should remain in timeline with replacement text: **"message deleted by sender"**.
+### 11. Per-User Supabase Storage Hardening
+After file sharing ships, harden Supabase Storage: bucket policy review, per-user path conventions, quotas/limits, cleanup lifecycle.
 
-### ~~18. Push Notifications~~ DONE — PENDING TEST
-~~No browser notification fires when the tab is unfocused. Users will miss messages. Implement the Web Notifications API (request permission on login) and trigger on incoming Realtime message events.~~ Also added ping sound for new messages and unread badge counter per chat.
+---
 
-### ~~19. Notification Icon Reliability / Speed~~ DONE — PENDING TEST
-~~Notification icon behavior is not working consistently (or feels too slow).~~ Replaced with a global Realtime subscription driving instant unread badges + document title counter (e.g. "(3) EPS Chat"). Also added incoming-call ringtone via Web Audio API.
+## 🔵 Lower Priority — Polish & Security
 
-### ~~21. Logout Icon Color (Reddish)~~ DONE — PENDING TEST
-~~Change the logout icon color to a reddish tone to better signal a destructive/exit action while preserving contrast and accessibility.~~
+### 24. Restrict DB Role for Production
+`DATABASE_URL` currently connects as the DB owner (bypasses RLS). Create a dedicated `app_server` role with `GRANT SELECT, INSERT, UPDATE, DELETE` only — no `SUPERUSER` or `BYPASSRLS`. Reduces blast radius if the connection string leaks. See security analysis in chat history.
 
-### ~~22. Call Button Font Consistency~~ DONE — PENDING TEST
-~~Update the "Call" button text to use the same project font styling as the rest of the UI for visual consistency.~~
+### 25. Delete-for-Me Server-Side Persistence
+"Delete for me" is currently stored in `localStorage` per user per browser. If the user clears storage or switches devices, the message reappears. Proper fix: a `deleted_for_me` junction table (`user_id`, `message_id`) filtered at query time in `getMessages`.
+
+### 26. Invite Link Single-Use Enforcement
+An accepted invite token is not invalidated server-side after use — the status is updated but the token remains valid. Add a check that rejects tokens with `status != 'pending'` on the accept endpoint.

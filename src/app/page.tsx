@@ -23,6 +23,8 @@ import MessageInput from "@/components/chat/MessageInput";
 import PendingPrompt from "@/components/chat/PendingPrompt";
 import EmptyChatState from "@/components/chat/EmptyChatState";
 import { useConnectionStatus } from "@/hooks/useConnectionStatus";
+import { useMutedChats } from "@/hooks/useMutedChats";
+import { supabase } from "@/lib/supabaseClient";
 
 function formatDateSeparator(date: Date): string {
   const now = new Date();
@@ -61,6 +63,8 @@ export default function ChatPage() {
     canWrite,
     loading,
     error,
+    isLoadingMore,
+    hasMoreMessages,
     setActiveChat,
     sendMessage,
     retrySend,
@@ -69,9 +73,12 @@ export default function ChatPage() {
     deleteChat,
     toggleReaction,
     refreshChats,
+    loadMoreMessages,
     joinChat,
     declineChat,
   } = useChat();
+
+  const [incomingCallChatId, setIncomingCallChatId] = useState<string | null>(null);
 
   const {
     shareStatus,
@@ -94,10 +101,11 @@ export default function ChatPage() {
     rejectCall,
     hangUp,
     toggleMute,
-  } = useVoiceCall(activeChatId);
+  } = useVoiceCall(incomingCallChatId ?? activeChatId);
   const { onlineUsers, typingUsers, startTyping, stopTyping } =
     usePresence(activeChatId);
   const connectionStatus = useConnectionStatus();
+  const { mutedChats, toggleMute: toggleChatMute } = useMutedChats();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
@@ -113,12 +121,13 @@ export default function ChatPage() {
   } | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [highlightedMessageId, setHighlightedMessageId] = useState<
-    string | null
-  >(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const [searchMode, setSearchMode] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const prevScrollHeightRef = useRef<number | null>(null);
 
   const unreadCounts = useChatStore((s) => s.unreadCounts);
   const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
@@ -146,13 +155,31 @@ export default function ChatPage() {
       setShowScrollButton(
         scrollHeight - scrollTop - clientHeight > 100 && messages.length > 0
       );
+      if (scrollTop < 80 && hasMoreMessages && !isLoadingMore) {
+        loadMoreMessages();
+      }
     };
     viewport.addEventListener("scroll", handleScroll);
     return () => viewport.removeEventListener("scroll", handleScroll);
-  }, [messages.length, activeChatId]);
+  }, [messages.length, activeChatId, hasMoreMessages, isLoadingMore, loadMoreMessages]);
+
+  // After prepending older messages, restore scroll position so view doesn't jump
+  useEffect(() => {
+    if (prevScrollHeightRef.current === null) return;
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const viewport = container.querySelector(
+      '[data-slot="scroll-area-viewport"]'
+    ) as HTMLElement;
+    if (!viewport) return;
+    viewport.scrollTop += viewport.scrollHeight - prevScrollHeightRef.current;
+    prevScrollHeightRef.current = null;
+  }, [messages.length]);
 
   useEffect(() => {
     setJoinError(null);
+    setSearchMode(false);
+    setSearchQuery("");
   }, [activeChatId]);
 
   // Request notification permission once on mount
@@ -173,6 +200,33 @@ export default function ChatPage() {
   useEffect(() => {
     document.title = totalUnread > 0 ? `(${totalUnread}) EPS Chat` : "EPS Chat";
   }, [totalUnread]);
+
+  // Global incoming call detector — shows CallModal even when no chat is open
+  useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase
+      .channel("global-call-sessions")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "call_sessions" },
+        (payload) => {
+          const raw = payload.new as Record<string, unknown> | undefined;
+          if (!raw) { setIncomingCallChatId(null); return; }
+          const createdBy = raw.created_by_user_id as string;
+          const chatId = raw.chat_id as string;
+          const status = raw.status as string;
+          if (createdBy === user.id) return; // own call
+          if (status === "ringing") {
+            const state = useChatStore.getState();
+            if (state.memberships[chatId]) setIncomingCallChatId(chatId);
+          } else {
+            setIncomingCallChatId(null);
+          }
+        }
+      )
+      .subscribe();
+    return () => { channel.unsubscribe(); };
+  }, [user?.id]);
 
   useEffect(() => {
     if (!showEmojiPicker) return;
@@ -237,9 +291,16 @@ export default function ChatPage() {
     setEditContent("");
   }
 
-  async function handleDelete(msgId: string) {
+  async function handleDelete(msgId: string, mode: "for_me" | "for_everyone") {
     setContextMenuMsgId(null);
-    await deleteMessage(msgId);
+    await deleteMessage(msgId, mode);
+  }
+
+  function handleLoadMore() {
+    const container = messagesContainerRef.current;
+    const viewport = container?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement | null;
+    if (viewport) prevScrollHeightRef.current = viewport.scrollHeight;
+    loadMoreMessages();
   }
 
   function handleReply(msgId: string, content: string) {
@@ -330,6 +391,8 @@ export default function ChatPage() {
           onNewChat={handleNewChat}
           onLogout={handleLogout}
           onDeleteChat={handleDeleteChat}
+          mutedChats={mutedChats}
+          onToggleMute={toggleChatMute}
         />
       </aside>
 
@@ -351,6 +414,8 @@ export default function ChatPage() {
             onNewChat={handleNewChat}
             onLogout={handleLogout}
             onDeleteChat={handleDeleteChat}
+            mutedChats={mutedChats}
+            onToggleMute={toggleChatMute}
           />
         </SheetContent>
       </Sheet>
@@ -381,6 +446,7 @@ export default function ChatPage() {
               onStartSharing={startSharing}
               onStopSharing={stopSharing}
               onBack={() => setActiveChat(null)}
+              onToggleSearch={() => setSearchMode((m) => !m)}
             />
 
             {connectionStatus !== "connected" && (
@@ -411,6 +477,26 @@ export default function ChatPage() {
               </div>
             ) : (
               <>
+                {/* Search bar */}
+                {searchMode && (
+                  <div className="px-3 py-2 border-b border-border flex items-center gap-2 shrink-0">
+                    <input
+                      autoFocus
+                      type="text"
+                      placeholder="Search messages…"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="flex-1 text-sm bg-transparent outline-none placeholder:text-muted-foreground"
+                    />
+                    <button
+                      onClick={() => { setSearchMode(false); setSearchQuery(""); }}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+
                 {/* Messages */}
                 <div
                   className="flex-1 overflow-hidden relative"
@@ -418,22 +504,44 @@ export default function ChatPage() {
                 >
                   <ScrollArea className="h-full px-4 md:px-6 py-4 md:py-6">
                     <div className="flex flex-col gap-1">
+                      {/* Load more older messages */}
+                      {hasMoreMessages && !searchMode && (
+                        <div className="flex justify-center py-2">
+                          {isLoadingMore ? (
+                            <p className="text-xs text-muted-foreground">Loading…</p>
+                          ) : (
+                            <button
+                              onClick={handleLoadMore}
+                              className="text-xs text-primary hover:underline"
+                            >
+                              Load older messages
+                            </button>
+                          )}
+                        </div>
+                      )}
+
                       {loading.messages && (
                         <p className="text-xs text-muted-foreground text-center py-4">
                           Loading messages…
                         </p>
                       )}
-                      {!loading.messages && messages.length === 0 && (
+                      {!loading.messages && messages.length === 0 && !searchMode && (
                         <p className="text-xs text-muted-foreground text-center py-10">
                           No messages yet. Say something!
                         </p>
                       )}
 
-                      {messages.map((msg, i) => {
+                      {(searchMode && searchQuery
+                        ? messages.filter((m) =>
+                            m.content.toLowerCase().includes(searchQuery.toLowerCase()) &&
+                            !m.deletedAt
+                          )
+                        : messages
+                      ).map((msg, i, list) => {
                         const isOwn =
                           msg.userId === user?.id ||
                           msg.userId === "optimistic";
-                        const prevMsg = messages[i - 1];
+                        const prevMsg = list[i - 1];
                         const parentMsg = msg.parentId
                           ? (messages.find((m) => m.id === msg.parentId) ??
                             null)
@@ -500,6 +608,11 @@ export default function ChatPage() {
                                   ? () => retrySend(msg.id)
                                   : undefined
                               }
+                              onEdit={() => {
+                                if (!msg.deletedAt) handleStartEdit(msg.id, msg.content);
+                              }}
+                              onDeleteForMe={() => handleDelete(msg.id, "for_me")}
+                              onDeleteForEveryone={() => handleDelete(msg.id, "for_everyone")}
                             />
                           </div>
                         );
@@ -562,10 +675,16 @@ export default function ChatPage() {
                         Edit
                       </button>
                       <button
-                        onClick={() => handleDelete(contextMenuMsgId)}
+                        onClick={() => handleDelete(contextMenuMsgId, "for_me")}
+                        className="w-full text-left px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted transition-colors"
+                      >
+                        Delete for me
+                      </button>
+                      <button
+                        onClick={() => handleDelete(contextMenuMsgId, "for_everyone")}
                         className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-muted transition-colors"
                       >
-                        Delete
+                        Delete for everyone
                       </button>
                     </div>
                   )}
@@ -633,7 +752,7 @@ export default function ChatPage() {
       />
 
       <CallModal
-        chatName={activeChat?.name ?? ""}
+        chatName={(incomingCallChatId ? chats.find((c) => c.id === incomingCallChatId) : activeChat)?.name ?? activeChat?.name ?? ""}
         callStatus={callStatus}
         isMuted={isMuted}
         caller={caller}

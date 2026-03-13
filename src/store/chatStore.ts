@@ -18,6 +18,7 @@ export interface ChatState {
   memberships: Record<string, ChatRole>; // chatId → user's role (incl. "pending")
   reactions: Record<string, Reaction[]>; // keyed by chatId
   unreadCounts: Record<string, number>; // chatId → unread message count
+  hasMoreMessages: Record<string, boolean>; // chatId → whether older messages exist
 
   // Loading / error per-resource
   loading: {
@@ -33,15 +34,20 @@ export interface ChatState {
   setChats: (chats: ChatWithRole[]) => void;
   setActiveChat: (chatId: string | null) => void;
   setMessages: (chatId: string, messages: Message[]) => void;
+  prependMessages: (chatId: string, messages: Message[]) => void;
   appendMessage: (chatId: string, message: Message) => void;
   updateMessage: (chatId: string, messageId: string, updates: Partial<Message>) => void;
+  removeMessage: (chatId: string, messageId: string) => void;
   setReactions: (chatId: string, reactions: Reaction[]) => void;
   addReaction: (chatId: string, reaction: Reaction) => void;
   removeReaction: (chatId: string, reactionId: string) => void;
   setMembership: (chatId: string, role: ChatRole) => void;
   removeMembership: (chatId: string) => void;
+  setUnreadCounts: (counts: Record<string, number>) => void;
+  setUnreadCount: (chatId: string, count: number) => void;
   incrementUnread: (chatId: string) => void;
   clearUnread: (chatId: string) => void;
+  setHasMore: (chatId: string, value: boolean) => void;
   setLoading: (key: keyof ChatState["loading"], value: boolean) => void;
   setError: (key: keyof ChatState["error"], value: string | null) => void;
   reset: () => void;
@@ -56,6 +62,7 @@ const initialState = {
   memberships: {},
   reactions: {},
   unreadCounts: {},
+  hasMoreMessages: {},
   loading: { chats: false, messages: false },
   error: { chats: null, messages: null },
 };
@@ -99,6 +106,23 @@ export const useChatStore = create<ChatState>()(
           "setMessages"
         ),
 
+      prependMessages: (chatId, newMessages) =>
+        set(
+          (state) => {
+            const existing = state.messages[chatId] ?? [];
+            const existingIds = new Set(existing.map((m) => m.id));
+            const fresh = newMessages.filter((m) => !existingIds.has(m.id));
+            return {
+              messages: {
+                ...state.messages,
+                [chatId]: [...fresh, ...existing],
+              },
+            };
+          },
+          false,
+          "prependMessages"
+        ),
+
       appendMessage: (chatId, message) =>
         set(
           (state) => {
@@ -131,6 +155,22 @@ export const useChatStore = create<ChatState>()(
           },
           false,
           "updateMessage"
+        ),
+
+      removeMessage: (chatId, messageId) =>
+        set(
+          (state) => {
+            const existing = state.messages[chatId];
+            if (!existing) return state;
+            return {
+              messages: {
+                ...state.messages,
+                [chatId]: existing.filter((m) => m.id !== messageId),
+              },
+            };
+          },
+          false,
+          "removeMessage"
         ),
 
       setReactions: (chatId, reactions) =>
@@ -201,6 +241,29 @@ export const useChatStore = create<ChatState>()(
           "removeMembership"
         ),
 
+      setUnreadCounts: (counts) =>
+        set(
+          () => ({ unreadCounts: counts }),
+          false,
+          "setUnreadCounts"
+        ),
+
+      setUnreadCount: (chatId, count) =>
+        set(
+          (state) => {
+            if (count <= 0) {
+              if (!state.unreadCounts[chatId]) return state;
+              const { [chatId]: _, ...rest } = state.unreadCounts;
+              return { unreadCounts: rest };
+            }
+            return {
+              unreadCounts: { ...state.unreadCounts, [chatId]: count },
+            };
+          },
+          false,
+          "setUnreadCount"
+        ),
+
       incrementUnread: (chatId) =>
         set(
           (state) => ({
@@ -222,6 +285,15 @@ export const useChatStore = create<ChatState>()(
           },
           false,
           "clearUnread"
+        ),
+
+      setHasMore: (chatId, value) =>
+        set(
+          (state) => ({
+            hasMoreMessages: { ...state.hasMoreMessages, [chatId]: value },
+          }),
+          false,
+          "setHasMore"
         ),
 
       setLoading: (key, value) =>

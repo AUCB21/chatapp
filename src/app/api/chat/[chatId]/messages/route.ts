@@ -3,6 +3,7 @@ import { getAuthUser } from "@/lib/supabaseServer";
 import { getUserRole } from "@/db/queries/memberships";
 import {
   getMessages,
+  searchMessages,
   createMessage,
   editMessage,
   deleteMessage,
@@ -22,12 +23,15 @@ import {
 
 type Params = { params: Promise<{ chatId: string }> };
 
+const PAGE_SIZE = 25;
+
 /**
  * GET /api/chat/[chatId]/messages
- * Returns all messages for the chat (with reactions).
+ * Returns messages for the chat (with reactions).
+ * Supports ?before=<ISO8601> for pagination and ?search=<query> for search.
  * Also marks messages as read for the requesting user.
  */
-export async function GET(_req: NextRequest, { params }: Params) {
+export async function GET(req: NextRequest, { params }: Params) {
   const user = await getAuthUser();
   if (!user) return unauthorized();
 
@@ -37,17 +41,33 @@ export async function GET(_req: NextRequest, { params }: Params) {
     const role = await getUserRole(user.id, chatId);
     if (!role) return forbidden();
 
+    const url = new URL(req.url);
+    const searchQuery = url.searchParams.get("search");
+
+    // Search mode — return matching messages, no reactions needed
+    if (searchQuery) {
+      const results = await searchMessages(user.id, chatId, searchQuery);
+      return ok({ messages: results, reactions: [] });
+    }
+
+    const beforeParam = url.searchParams.get("before");
+    const before = beforeParam ? new Date(beforeParam) : undefined;
+
     const [msgs, reactions] = await Promise.all([
-      getMessages(user.id, chatId),
-      getReactionsForChat(chatId),
+      getMessages(user.id, chatId, { before, limit: PAGE_SIZE }),
+      before ? Promise.resolve([]) : getReactionsForChat(chatId),
     ]);
 
-    // Mark messages as read in background (don't block response)
-    markRead(chatId, user.id).catch((e) =>
-      console.error("[markRead]", e)
-    );
+    const hasMore = msgs.length === PAGE_SIZE;
 
-    return ok({ messages: msgs, reactions });
+    // Mark messages as read in background (don't block response)
+    if (!before) {
+      markRead(chatId, user.id).catch((e) =>
+        console.error("[markRead]", e)
+      );
+    }
+
+    return ok({ messages: msgs, reactions, hasMore });
   } catch (error) {
     return serverError("Failed to fetch messages", error);
   }
@@ -137,7 +157,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
 /**
  * DELETE /api/chat/[chatId]/messages
- * Soft-deletes a message. Only the author can delete.
+ * Soft-deletes a message for everyone. Only the author can delete.
  * Body: { messageId: string }
  */
 export async function DELETE(req: NextRequest, { params }: Params) {
