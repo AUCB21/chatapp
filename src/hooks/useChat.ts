@@ -147,6 +147,7 @@ export function useChat(): UseChatReturn {
 
   useEffect(() => {
     if (!isReady || !activeChatId) return;
+    const activeId = activeChatId;
 
     // Pending chats show an accept/decline prompt — no messages to load
     if (activeMembership === "pending") return;
@@ -160,10 +161,10 @@ export function useChat(): UseChatReturn {
       setLoading("messages", true);
       setError("messages", null);
 
-      const existingMessages = useChatStore.getState().messages[activeChatId];
+      const existingMessages = useChatStore.getState().messages[activeId];
       if (!existingMessages || existingMessages.length === 0) {
         try {
-          const res = await fetch(`/api/chat/${activeChatId}/messages`);
+          const res = await fetch(`/api/chat/${activeId}/messages`);
 
           if (res.status === 403) {
             _setActiveChat(null as unknown as string);
@@ -174,10 +175,10 @@ export function useChat(): UseChatReturn {
 
           const { data } = await res.json();
           if (data.messages) {
-            setMessages(activeChatId!, data.messages);
-            setReactions(activeChatId!, data.reactions ?? []);
+            setMessages(activeId, data.messages);
+            setReactions(activeId, data.reactions ?? []);
           } else {
-            setMessages(activeChatId!, data);
+            setMessages(activeId, data);
           }
         } catch (e) {
           setError("messages", e instanceof Error ? e.message : "Unknown error");
@@ -192,11 +193,11 @@ export function useChat(): UseChatReturn {
       const isReactionForActiveChat = (messageId: string) =>
         useChatStore
           .getState()
-          .messages[activeChatId!]
+          .messages[activeId]
           ?.some((message) => message.id === messageId) ?? false;
 
       const channel = supabase
-        .channel(`messages:${activeChatId}`)
+        .channel(`messages:${activeId}`)
         // INSERT: new messages
         .on(
           "postgres_changes",
@@ -204,7 +205,7 @@ export function useChat(): UseChatReturn {
             event: "INSERT",
             schema: "public",
             table: "messages",
-            filter: `chat_id=eq.${activeChatId}`,
+            filter: `chat_id=eq.${activeId}`,
           },
           (payload) => {
             const raw = payload.new as Record<string, unknown>;
@@ -219,7 +220,7 @@ export function useChat(): UseChatReturn {
               deletedAt: raw.deleted_at ? new Date(raw.deleted_at as string) : null,
               createdAt: new Date(raw.created_at as string),
             };
-            appendMessage(activeChatId!, incoming);
+            appendMessage(activeId, incoming);
           }
         )
         // UPDATE: edits, deletes, status changes
@@ -229,11 +230,11 @@ export function useChat(): UseChatReturn {
             event: "UPDATE",
             schema: "public",
             table: "messages",
-            filter: `chat_id=eq.${activeChatId}`,
+            filter: `chat_id=eq.${activeId}`,
           },
           (payload) => {
             const raw = payload.new as Record<string, unknown>;
-            updateMessage(activeChatId!, raw.id as string, {
+            updateMessage(activeId, raw.id as string, {
               content: raw.content as string,
               status: (raw.status as "sent" | "delivered" | "read") || "sent",
               editedAt: raw.edited_at ? new Date(raw.edited_at as string) : null,
@@ -253,7 +254,7 @@ export function useChat(): UseChatReturn {
             const raw = payload.new as Record<string, unknown>;
             const messageId = raw.message_id as string;
             if (!isReactionForActiveChat(messageId)) return;
-            addReactionToStore(activeChatId!, {
+            addReactionToStore(activeId, {
               id: raw.id as string,
               messageId,
               userId: raw.user_id as string,
@@ -274,7 +275,7 @@ export function useChat(): UseChatReturn {
             const raw = payload.old as Record<string, unknown>;
             const messageId = raw.message_id as string | undefined;
             if (raw.id && messageId && isReactionForActiveChat(messageId)) {
-              removeReactionFromStore(activeChatId!, raw.id as string);
+              removeReactionFromStore(activeId, raw.id as string);
             }
           }
         )
@@ -284,7 +285,7 @@ export function useChat(): UseChatReturn {
           { event: "new-message" },
           (payload) => {
             const msg = payload.payload as Message;
-            appendMessage(activeChatId!, {
+            appendMessage(activeId, {
               ...msg,
               createdAt: new Date(msg.createdAt),
             });
@@ -296,7 +297,7 @@ export function useChat(): UseChatReturn {
           { event: "message-updated" },
           (payload) => {
             const data = payload.payload as { messageId: string } & Partial<Message>;
-            updateMessage(activeChatId!, data.messageId, {
+            updateMessage(activeId, data.messageId, {
               content: data.content,
               editedAt: data.editedAt ? new Date(data.editedAt) : undefined,
               deletedAt: data.deletedAt ? new Date(data.deletedAt) : undefined,

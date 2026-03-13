@@ -6,9 +6,9 @@ import { created, unauthorized, badRequest, serverError } from "@/lib/apiRespons
 
 /**
  * POST /api/invite
- * Creates a new chat and records an in-app invitation for the given email.
- * The creator becomes admin immediately. The invitee sees the chat in their
- * sidebar (role "pending") and can accept or decline from there.
+ * Creates a new chat and either:
+ * - records a direct invitation for a specific email, or
+ * - records a shareable token invitation when no email is provided.
  */
 export async function POST(req: NextRequest) {
   const user = await getAuthUser();
@@ -20,9 +20,25 @@ export async function POST(req: NextRequest) {
 
   const { chatName, invitedEmail } = parsed.data;
 
+  if (invitedEmail && invitedEmail.toLowerCase() === (user.email ?? "").toLowerCase()) {
+    return badRequest("You cannot invite yourself");
+  }
+
   try {
-    const { chat } = await createChatWithInvitation(chatName, user.id, invitedEmail);
-    return created({ chatId: chat.id, chatName: chat.name });
+    const normalizedEmail = invitedEmail?.trim() || undefined;
+    const { chat, invitation } = await createChatWithInvitation(
+      chatName,
+      user.id,
+      normalizedEmail
+    );
+
+    return created({
+      chatId: chat.id,
+      chatName: chat.name,
+      inviteToken: normalizedEmail ? null : invitation.token,
+      delivery: normalizedEmail ? "direct" : "link",
+      invitedEmail: normalizedEmail ?? null,
+    });
   } catch (error) {
     return serverError("Failed to create invitation", error);
   }

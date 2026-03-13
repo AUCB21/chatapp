@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { useChat } from "@/hooks/useChat";
 import { usePresence } from "@/hooks/usePresence";
 import { useSessionStore } from "@/store/sessionStore";
@@ -90,6 +91,7 @@ export default function ChatPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const promptedPendingInvitesRef = useRef<Set<string>>(new Set());
 
   const reactionGrouped = groupReactions(reactions);
   const activeChat = chats.find((c) => c.id === activeChatId);
@@ -221,6 +223,41 @@ export default function ChatPage() {
       setJoiningChatId(null);
     }
   }
+
+  useEffect(() => {
+    const pendingChats = chats.filter((chat) => chat.role === "pending");
+    const currentPendingIds = new Set(pendingChats.map((chat) => chat.id));
+
+    for (const chatId of promptedPendingInvitesRef.current) {
+      if (!currentPendingIds.has(chatId)) {
+        promptedPendingInvitesRef.current.delete(chatId);
+      }
+    }
+
+    for (const chat of pendingChats) {
+      if (promptedPendingInvitesRef.current.has(chat.id)) continue;
+
+      promptedPendingInvitesRef.current.add(chat.id);
+
+      toast(`Invitation to ${chat.name}`, {
+        description: "Accept to join now or decline the request.",
+        duration: 12000,
+        action: {
+          label: "Accept",
+          onClick: () => {
+            setActiveChat(chat.id);
+            void handleJoin(chat.id);
+          },
+        },
+        cancel: {
+          label: "Decline",
+          onClick: () => {
+            void handleDecline(chat.id);
+          },
+        },
+      });
+    }
+  }, [chats]);
 
   const handleSelectChat = (chatId: string) => {
     setActiveChat(chatId);

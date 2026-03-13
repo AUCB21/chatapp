@@ -33,5 +33,5 @@ export const updateMemberSchema = z.object({
 
 export const createInviteSchema = z.object({
   chatName: z.string().min(1).max(100).trim(),
-  invitedEmail: z.string().email(),
+  invitedEmail: z.string().email().optional(),
 });

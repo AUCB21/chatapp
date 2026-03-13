@@ -22,7 +22,7 @@ function expiresAt(): Date {
 export async function createChatWithInvitation(
   chatName: string,
   creatorId: string,
-  invitedEmail: string
+  invitedEmail?: string
 ) {
   return db.transaction(async (tx) => {
     const [chat] = await tx.insert(chats).values({ name: chatName }).returning();
@@ -33,13 +33,16 @@ export async function createChatWithInvitation(
       role: "admin",
     });
 
+    const token = generateToken();
+
     const [invitation] = await tx
       .insert(invitations)
       .values({
         chatId: chat.id,
         invitedByUserId: creatorId,
-        invitedEmail: invitedEmail.toLowerCase(),
-        token: generateToken(),
+        invitedEmail:
+          invitedEmail?.toLowerCase() ?? `link+${token}@invite.local`,
+        token,
         expiresAt: expiresAt(),
       })
       .returning();
@@ -139,5 +142,60 @@ export async function declineInvitationByChatAndEmail(
       .where(eq(invitations.id, inv.id));
 
     return { ok: true };
+  });
+}
+
+/**
+ * Returns pending invitation metadata by token.
+ */
+export async function getPendingInvitationByToken(token: string) {
+  const result = await db
+    .select({
+      invitationId: invitations.id,
+      chatId: invitations.chatId,
+      chatName: chats.name,
+      status: invitations.status,
+      expiresAt: invitations.expiresAt,
+    })
+    .from(invitations)
+    .innerJoin(chats, eq(chats.id, invitations.chatId))
+    .where(eq(invitations.token, token))
+    .limit(1);
+
+  return result[0] ?? null;
+}
+
+/**
+ * Accepts a pending invitation using a token.
+ */
+export async function acceptInvitationByToken(
+  token: string,
+  userId: string
+): Promise<{ ok: true; chatId: string } | { error: string }> {
+  return db.transaction(async (tx) => {
+    const result = await tx
+      .select()
+      .from(invitations)
+      .where(eq(invitations.token, token))
+      .limit(1);
+
+    const inv = result[0];
+    if (!inv) return { error: "Invitation not found" };
+    if (inv.status !== "pending") return { error: "Invitation is no longer pending" };
+    if (inv.expiresAt.getTime() <= Date.now()) return { error: "Invitation has expired" };
+
+    await tx
+      .insert(memberships)
+      .values({ userId, chatId: inv.chatId, role: "write" })
+      .onConflictDoNothing({
+        target: [memberships.userId, memberships.chatId],
+      });
+
+    await tx
+      .update(invitations)
+      .set({ status: "accepted" })
+      .where(eq(invitations.id, inv.id));
+
+    return { ok: true, chatId: inv.chatId };
   });
 }

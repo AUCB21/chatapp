@@ -33,6 +33,7 @@ export default function NewChatModal({
   const [invitedEmail, setInvitedEmail] = useState("");
   const [state, setState] = useState<ModalState>({ kind: "idle" });
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
 
   function handleOpenChange(isOpen: boolean) {
     if (!isOpen) {
@@ -41,15 +42,17 @@ export default function NewChatModal({
       setInvitedEmail("");
       setState({ kind: "idle" });
       setSuccessMessage(null);
+      setInviteLink(null);
     }
   }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!chatName.trim() || !invitedEmail.trim()) return;
+    if (!chatName.trim()) return;
 
     setState({ kind: "submitting" });
     setSuccessMessage(null);
+    setInviteLink(null);
 
     try {
       const res = await fetch("/api/invite", {
@@ -57,7 +60,7 @@ export default function NewChatModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chatName: chatName.trim(),
-          invitedEmail: invitedEmail.trim(),
+          invitedEmail: invitedEmail.trim() || undefined,
         }),
       });
 
@@ -69,12 +72,34 @@ export default function NewChatModal({
       }
 
       setState({ kind: "idle" });
+      const directInviteEmail = invitedEmail.trim();
       setChatName("");
       setInvitedEmail("");
-      setSuccessMessage(`Invitation sent for “${json.data.chatName}”.`);
+
+      if (json.data.delivery === "direct") {
+        setInviteLink(null);
+        setSuccessMessage(
+          `Invitation sent to ${directInviteEmail} for “${json.data.chatName}”.`
+        );
+      } else {
+        const generatedLink = `${window.location.origin}/invite/${json.data.inviteToken}`;
+        setInviteLink(generatedLink);
+        setSuccessMessage(`Invite link created for “${json.data.chatName}”.`);
+      }
+
       onChatCreated(json.data.chatId);
     } catch {
       setState({ kind: "error", message: "Network error" });
+    }
+  }
+
+  async function handleCopyLink() {
+    if (!inviteLink) return;
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setSuccessMessage("Invite link copied.");
+    } catch {
+      setSuccessMessage("Could not copy link. Copy it manually below.");
     }
   }
 
@@ -85,7 +110,7 @@ export default function NewChatModal({
           <DialogHeader>
             <DialogTitle>New chat</DialogTitle>
             <DialogDescription>
-              Create a new chat and invite someone to join.
+              Create a chat, invite one person directly, or generate a shareable link.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -104,16 +129,36 @@ export default function NewChatModal({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="invitedEmail">Invite via email</Label>
+              <Label htmlFor="invitedEmail">Invite one user now (optional)</Label>
               <Input
                 id="invitedEmail"
                 type="email"
                 value={invitedEmail}
                 onChange={(e) => setInvitedEmail(e.target.value)}
                 placeholder="friend@example.com"
-                required
               />
+              <p className="text-xs text-muted-foreground">
+                If they are already online, they&apos;ll get an immediate accept or decline prompt.
+                Leave blank to create a link invite instead.
+              </p>
             </div>
+
+            {inviteLink && (
+              <div className="space-y-2">
+                <Label htmlFor="inviteLink">Invite link</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="inviteLink"
+                    type="text"
+                    value={inviteLink}
+                    readOnly
+                  />
+                  <Button type="button" variant="outline" onClick={handleCopyLink}>
+                    Copy
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {successMessage && (
               <div className="text-sm text-emerald-600">{successMessage}</div>
@@ -128,12 +173,15 @@ export default function NewChatModal({
                 type="submit"
                 disabled={
                   state.kind === "submitting" ||
-                  !chatName.trim() ||
-                  !invitedEmail.trim()
+                  !chatName.trim()
                 }
                 className="w-full sm:w-auto"
               >
-                {state.kind === "submitting" ? "Creating…" : "Create & invite"}
+                {state.kind === "submitting"
+                  ? "Creating…"
+                  : invitedEmail.trim()
+                    ? "Create & send invite"
+                    : "Create & generate link"}
               </Button>
             </DialogFooter>
           </form>

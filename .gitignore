@@ -4,11 +4,19 @@ node_modules
 # Next.js build output
 .next
 out
+.vercel
 
 # environment variables — never commit secrets
 .env
 .env.local
 .env.*.local
+
+# TypeScript incremental build info
+tsconfig.tsbuildinfo
+
+# logs and coverage
+*.log
+coverage
 
 # misc
 .DS_Store
