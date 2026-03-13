@@ -98,7 +98,7 @@ export default function VoiceCallControls({
           {callStatus === 'idle' && (
             <Button
               onClick={onStartCall}
-              className="h-9 px-4 rounded-xl text-[0.625rem] uppercase tracking-wider bg-green-600 hover:bg-green-700 text-white gap-2"
+              className="h-9 px-4 rounded-xl bg-green-600 hover:bg-green-700 text-white gap-2"
             >
               <Phone className="w-3.5 h-3.5" />
               Call
@@ -110,7 +110,7 @@ export default function VoiceCallControls({
             <div className="flex items-center gap-2">
               <Button
                 onClick={onHangUp}
-                className="h-9 px-4 rounded-xl text-[0.625rem] uppercase tracking-wider bg-red-500 hover:bg-red-600 text-white gap-2"
+                className="h-9 px-4 rounded-xl bg-red-500 hover:bg-red-600 text-white gap-2"
               >
                 <PhoneOff className="w-3.5 h-3.5" />
                 Cancel
@@ -126,7 +126,7 @@ export default function VoiceCallControls({
             <div className="flex items-center gap-2">
               <Button
                 onClick={onHangUp}
-                className="h-9 px-4 rounded-xl text-[0.625rem] uppercase tracking-wider bg-red-500 hover:bg-red-600 text-white gap-2"
+                className="h-9 px-4 rounded-xl bg-red-500 hover:bg-red-600 text-white gap-2"
               >
                 <PhoneOff className="w-3.5 h-3.5" />
                 Hang up

@@ -64,14 +64,14 @@ The `<Paperclip>` button is rendered but does nothing. Needs a file picker, uplo
 ### 17. Single Message Deletion Modes — PENDING TEST
 Add per-message deletion options using the same dual logic pattern: **delete for me** and **delete for everybody**. If deleted for everybody, the message should remain in timeline with replacement text: **"message deleted by sender"**.
 
-### 18. Push Notifications — PENDING TEST
-No browser notification fires when the tab is unfocused. Users will miss messages. Implement the Web Notifications API (request permission on login) and trigger on incoming Realtime message events.
+### ~~18. Push Notifications~~ DONE — PENDING TEST
+~~No browser notification fires when the tab is unfocused. Users will miss messages. Implement the Web Notifications API (request permission on login) and trigger on incoming Realtime message events.~~ Also added ping sound for new messages and unread badge counter per chat.
 
-### 19. Notification Icon Reliability / Speed — PENDING TEST
-Notification icon behavior is not working consistently (or feels too slow). Review event timing and update path so icon state reacts immediately to new events.
+### ~~19. Notification Icon Reliability / Speed~~ DONE — PENDING TEST
+~~Notification icon behavior is not working consistently (or feels too slow).~~ Replaced with a global Realtime subscription driving instant unread badges + document title counter (e.g. "(3) EPS Chat"). Also added incoming-call ringtone via Web Audio API.
 
-### 21. Logout Icon Color (Reddish) — PENDING TEST
-Change the logout icon color to a reddish tone to better signal a destructive/exit action while preserving contrast and accessibility.
+### ~~21. Logout Icon Color (Reddish)~~ DONE — PENDING TEST
+~~Change the logout icon color to a reddish tone to better signal a destructive/exit action while preserving contrast and accessibility.~~
 
-### 22. Call Button Font Consistency — PENDING TEST
-Update the "Call" button text to use the same project font styling as the rest of the UI for visual consistency.
+### ~~22. Call Button Font Consistency~~ DONE — PENDING TEST
+~~Update the "Call" button text to use the same project font styling as the rest of the UI for visual consistency.~~

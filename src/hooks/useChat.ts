@@ -106,6 +106,65 @@ export function useChat(): UseChatReturn {
     refreshChats();
   }, []);
 
+  // --- Global background listener: unread counts + notifications + ping ---
+  // Watches ALL new messages across every chat the user belongs to.
+  // Per-chat subscription (below) handles UI display; this one handles side-effects only.
+
+  useEffect(() => {
+    if (!isReady || !userId) return;
+
+    const channel = supabase
+      .channel("global-messages")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => {
+          const raw = payload.new as Record<string, unknown>;
+          const fromUserId = raw.user_id as string;
+          const chatId = raw.chat_id as string;
+          const content = raw.content as string;
+
+          if (fromUserId === userId) return; // own messages — skip
+
+          const state = useChatStore.getState();
+          const isActiveChat = state.activeChatId === chatId;
+
+          // Increment unread badge for any non-active chat
+          if (!isActiveChat) {
+            state.incrementUnread(chatId);
+          }
+
+          // Browser notification + ping when tab is hidden
+          if (document.visibilityState !== "visible") {
+            const chat = state.chats.find((c) => c.id === chatId);
+            const title = chat?.name ?? "New message";
+            if (
+              typeof Notification !== "undefined" &&
+              Notification.permission === "granted"
+            ) {
+              try {
+                new Notification(title, {
+                  body: content.length > 80 ? content.slice(0, 80) + "…" : content,
+                  tag: `msg-${chatId}`,
+                });
+              } catch {
+                // Notification blocked or unsupported
+              }
+            }
+            playPing();
+          } else if (!isActiveChat) {
+            // Tab visible but different chat — just ping
+            playPing();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [isReady, userId]);
+
   // --- Refresh chat list on relevant DB changes ---
   // • chats:INSERT        — a new chat was created
   // • memberships:INSERT  — an invitee accepted (creator's client updates)

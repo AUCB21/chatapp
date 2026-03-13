@@ -20,6 +20,7 @@ interface ChatSidebarProps {
   error: string | null;
   userEmail?: string;
   joiningChatId: string | null;
+  unreadCounts: Record<string, number>;
   onSelectChat: (chatId: string) => void;
   onJoin: (chatId: string) => void;
   onDecline: (chatId: string) => void;
@@ -49,6 +50,7 @@ export default function ChatSidebar({
   error,
   userEmail,
   joiningChatId,
+  unreadCounts,
   onSelectChat,
   onJoin,
   onDecline,
@@ -213,6 +215,7 @@ export default function ChatSidebar({
           {visibleChats.map((chat) => {
             const isActive = chat.id === activeChatId;
             const avatarColor = getAvatarColor(chat.name);
+            const unread = unreadCounts[chat.id] ?? 0;
 
             return (
               <div
@@ -236,7 +239,7 @@ export default function ChatSidebar({
 
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm font-medium truncate leading-tight ${
-                    isActive ? "text-primary" : ""
+                    isActive ? "text-primary" : unread > 0 ? "text-foreground" : ""
                   }`}>
                     {chat.name}
                   </p>
@@ -244,6 +247,13 @@ export default function ChatSidebar({
                     {chat.role === "declined" ? "Declined" : chat.role}
                   </p>
                 </div>
+
+                {/* Unread badge — hidden when dropdown is visible */}
+                {unread > 0 && !isActive && (
+                  <span className="shrink-0 min-w-[1.2rem] h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[0.6rem] font-semibold flex items-center justify-center tabular-nums group-hover/item:hidden">
+                    {unread > 99 ? "99+" : unread}
+                  </span>
+                )}
 
                 <div className="shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
                   <DropdownMenu>
@@ -296,7 +306,7 @@ export default function ChatSidebar({
           </div>
           <button
             onClick={onLogout}
-            className="w-7 h-7 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-sidebar-accent transition-colors"
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-rose-500/70 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
             title="Logout"
           >
             <LogOut className="w-3.5 h-3.5" />

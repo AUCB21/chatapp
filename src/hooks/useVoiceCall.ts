@@ -12,6 +12,7 @@ import {
   toggleStreamMute,
   isWebRTCSupported,
 } from "@/lib/webrtc";
+import { startRingtone, stopRingtone } from "@/lib/sounds";
 
 interface UseVoiceCallReturn {
   callStatus: VoiceCallStatus;
@@ -67,6 +68,31 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
       remoteAudioRef.current.autoplay = true;
     }
   }, []);
+
+  // --- Ringtone + browser notification on incoming call ---
+  useEffect(() => {
+    if (isIncomingCall) {
+      startRingtone();
+      if (
+        typeof Notification !== "undefined" &&
+        Notification.permission === "granted"
+      ) {
+        try {
+          new Notification("Incoming Call", {
+            body: caller?.name
+              ? `${caller.name} is calling you`
+              : "Someone is calling you",
+            tag: "incoming-call",
+          });
+        } catch {
+          // Notification blocked
+        }
+      }
+    } else {
+      stopRingtone();
+    }
+    return () => stopRingtone();
+  }, [isIncomingCall, caller?.name]);
 
   const cleanupCall = useCallback(() => {
     if (peerConnectionRef.current) {

@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { useChat } from "@/hooks/useChat";
 import { usePresence } from "@/hooks/usePresence";
 import { useSessionStore } from "@/store/sessionStore";
-import { groupReactions } from "@/store/chatStore";
+import { groupReactions, useChatStore } from "@/store/chatStore";
+import { unlockAudio } from "@/lib/sounds";
 import { useScreenShare } from "@/hooks/useScreenShare";
 import { useVoiceCall } from "@/hooks/useVoiceCall";
 import NewChatModal from "@/components/NewChatModal";
@@ -119,6 +120,9 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
+  const unreadCounts = useChatStore((s) => s.unreadCounts);
+  const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
+
   const reactionGrouped = groupReactions(reactions);
   const activeChat = chats.find((c) => c.id === activeChatId);
   const isPending = activeChat?.role === "pending";
@@ -150,6 +154,25 @@ export default function ChatPage() {
   useEffect(() => {
     setJoinError(null);
   }, [activeChatId]);
+
+  // Request notification permission once on mount
+  useEffect(() => {
+    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
+  // Unlock AudioContext + request notification permission on first click
+  useEffect(() => {
+    const handler = () => unlockAudio();
+    document.addEventListener("click", handler, { once: true });
+    return () => document.removeEventListener("click", handler);
+  }, []);
+
+  // Update document title with total unread count
+  useEffect(() => {
+    document.title = totalUnread > 0 ? `(${totalUnread}) EPS Chat` : "EPS Chat";
+  }, [totalUnread]);
 
   useEffect(() => {
     if (!showEmojiPicker) return;
@@ -300,6 +323,7 @@ export default function ChatPage() {
           error={error.chats}
           userEmail={user?.email}
           joiningChatId={joiningChatId}
+          unreadCounts={unreadCounts}
           onSelectChat={handleSelectChat}
           onJoin={handleJoin}
           onDecline={handleDecline}
@@ -320,6 +344,7 @@ export default function ChatPage() {
             error={error.chats}
             userEmail={user?.email}
             joiningChatId={joiningChatId}
+            unreadCounts={unreadCounts}
             onSelectChat={handleSelectChat}
             onJoin={handleJoin}
             onDecline={handleDecline}
