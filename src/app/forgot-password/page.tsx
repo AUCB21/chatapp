@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
+import { getSupabase } from "@/lib/supabaseClient";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -15,17 +16,12 @@ export default function ForgotPasswordPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/forgot-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+      // Call Supabase directly from the browser so window.location.origin
+      // is used as the base — guarantees the correct redirectTo URL.
+      const supabase = getSupabase();
+      await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
       });
-
-      if (!res.ok) {
-        const json = await res.json();
-        setError(json.error ?? "Something went wrong.");
-        return;
-      }
 
       setSent(true);
     } catch {

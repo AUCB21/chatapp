@@ -95,11 +95,8 @@ export default function ChatSidebar({
       {/* Header */}
       <div className="h-15 shrink-0 border-b border-sidebar-border px-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center shrink-0">
-            <svg className="w-3 h-3 text-primary-foreground" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M14 1H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2v3l4-3h6a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1z" />
-            </svg>
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icon.svg" alt="EPS Chat" className="shrink-0 w-15 h-15 md:w-25 md:h-25" />
           <span className="text-sm font-semibold tracking-tight">EPS Chat App</span>
         </div>
         <div className="flex items-center gap-0.5">

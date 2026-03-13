@@ -1,0 +1,19 @@
+<svg width="400" height="200" viewBox="0 0 400 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="eps_gradient" x1="0" y1="100" x2="400" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1E40AF" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+  </defs>
+
+  <g id="logo-mark">
+    <path d="M110 60C82.3858 60 60 82.3858 60 110C60 124.341 66.0142 137.278 75.666 146.438L65 170L95.5 158.5C100.1 159.4 104.9 160 110 160C137.614 160 160 137.614 160 110C160 82.3858 137.614 60 110 60Z" 
+          stroke="url(#eps_gradient)" stroke-width="8" stroke-linejoin="round"/>
+    
+    <path d="M165 60C137.386 60 115 82.3858 115 110C115 124.341 121.014 137.278 130.666 146.438L120 170L150.5 158.5C155.1 158.5 159.9 160 165 160C192.614 160 215 137.614 215 110C215 82.3858 192.614 60 165 60Z" 
+          stroke="url(#eps_gradient)" stroke-width="8" stroke-linejoin="round" fill="white" fill-opacity="0.1"/>
+  </g>
+
+  <text x="235" y="125" font-family="Arial, sans-serif" font-weight="800" font-size="64" fill="url(#eps_gradient)">EPS</text>
+  <text x="237" y="155" font-family="Arial, sans-serif" font-weight="400" font-size="20" fill="#64748B" letter-spacing="2">CHATTING</text>
+</svg>

@@ -92,7 +92,7 @@ export default function ResetPasswordPage() {
         {done ? (
           <Link
             href="/login"
-            className="block w-full h-11 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all text-center leading-[2.75rem]"
+            className="block w-full h-11 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all text-center leading-11"
           >
             Go to sign in
           </Link>

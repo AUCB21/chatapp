@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useProfileStore } from "@/store/profileStore";
 import { useSessionStore } from "@/store/sessionStore";
+import { getSupabase } from "@/lib/supabaseClient";
 import type { UserStatus } from "@/db/schema";
 
 interface SettingsViewProps {
@@ -76,18 +77,15 @@ export default function SettingsView({ onBack, onLogout, onDeleteAccount }: Sett
   }, [updateProfileStore]);
 
   const handlePasswordChange = useCallback(() => {
-    // Redirect to Supabase password reset via email
-    if (user?.email) {
-      fetch("/api/auth/forgot-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: user.email }),
-      }).then(() => {
-        alert("Password reset email sent. Check your inbox.");
-      }).catch(() => {
-        alert("Failed to send password reset email.");
-      });
-    }
+    if (!user?.email) return;
+    const supabase = getSupabase();
+    supabase.auth.resetPasswordForEmail(user.email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    }).then(() => {
+      alert("Password reset email sent. Check your inbox.");
+    }).catch(() => {
+      alert("Failed to send password reset email.");
+    });
   }, [user?.email]);
 
   const displayName = profile?.displayName ?? user?.email?.split("@")[0] ?? "User";

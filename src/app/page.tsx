@@ -465,7 +465,7 @@ function ChatPage() {
       }}
     >
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-[20rem] shrink-0 border-r flex-col">
+      <aside className="hidden md:flex w-[24rem] shrink-0 border-r flex-col">
         {settingsOpen ? (
           <SettingsView
             onBack={() => setSettingsOpen(false)}
