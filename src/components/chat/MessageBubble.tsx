@@ -99,8 +99,8 @@ function renderRawUrls(text: string, keyPrefix: string, linkClassName: string): 
 
 function renderMarkdownText(text: string, keyPrefix: string, isOwn: boolean): ReactNode[] {
   const linkClassName = isOwn
-    ? "underline underline-offset-2 break-all text-background/90 hover:text-background"
-    : "underline underline-offset-2 break-all text-foreground hover:text-primary";
+    ? "underline underline-offset-2 break-all text-primary-foreground/80 hover:text-primary-foreground"
+    : "underline underline-offset-2 break-all text-primary hover:text-primary/80";
 
   return text.split(INLINE_CODE_REGEX).map((part, index) => {
     const key = `${keyPrefix}-inline-${index}`;
@@ -109,8 +109,8 @@ function renderMarkdownText(text: string, keyPrefix: string, isOwn: boolean): Re
       return (
         <code
           key={key}
-          className={`rounded px-1.5 py-0.5 font-mono text-[0.8125rem] ${
-            isOwn ? "bg-background/15 text-background" : "bg-background text-foreground"
+          className={`rounded-md px-1.5 py-0.5 font-mono text-[0.75rem] ${
+            isOwn ? "bg-white/10 text-white/90" : "bg-muted border border-border text-foreground"
           }`}
         >
           {part}
@@ -126,14 +126,14 @@ function renderMarkdownMessage(content: string, isOwn: boolean) {
   return splitMarkdownMessage(content).map((segment, index) => {
     if (segment.type === "code") {
       return (
-        <div key={`code-${index}`} className="my-2 overflow-hidden rounded-xl border border-border/60">
+        <div key={`code-${index}`} className="my-2 overflow-hidden rounded-xl border border-border/60 text-left">
           {segment.language && (
-            <div className="border-b border-border/60 bg-background/70 px-3 py-1.5 font-mono text-[0.625rem] uppercase tracking-widest text-muted-foreground">
+            <div className="border-b border-border/60 bg-muted/50 px-3 py-1.5 font-mono text-[0.55rem] uppercase tracking-[0.15em] text-muted-foreground">
               {segment.language}
             </div>
           )}
-          <pre className={`overflow-x-auto px-3 py-2.5 text-[0.8125rem] ${
-            isOwn ? "bg-background/10 text-background" : "bg-background/80 text-foreground"
+          <pre className={`overflow-x-auto px-3 py-2.5 text-[0.75rem] ${
+            isOwn ? "bg-black/20 text-white/90" : "bg-muted/30 text-foreground"
           }`}>
             <code className="font-mono whitespace-pre">{segment.value}</code>
           </pre>
@@ -212,26 +212,28 @@ export default function MessageBubble({
   return (
     <div
       className={`w-full flex ${isOwn ? "justify-end" : "justify-start"} ${
-        isSameUser ? "mt-0.5" : "mt-5"
-      } group relative rounded-xl px-2 py-1 transition-colors duration-300 ease-out ${
-        isHighlighted ? "bg-primary/10" : "bg-transparent"
+        isSameUser ? "mt-0.5" : "mt-4"
+      } group relative px-3 py-0.5 rounded-xl transition-colors duration-200 ${
+        isHighlighted ? "bg-primary/8" : "bg-transparent"
       }`}
       onContextMenu={onContextMenu}
       onDoubleClick={handleDoubleClick}
     >
-      <div className="max-w-[85%] md:max-w-[70%] relative">
+      <div className="max-w-[80%] md:max-w-[65%] relative">
         {/* Reply preview */}
         {parentMsg && (
           <button
             type="button"
             onClick={() => onJumpToMessage(parentMsg.id)}
-            className={`text-[0.6875rem] px-3 py-1 mb-0.5 rounded-t-lg border-l-2 border-primary/40 bg-muted/50 text-muted-foreground ${
+            className={`text-[0.65rem] px-3 py-1.5 mb-1 rounded-t-lg flex items-center gap-1.5 border-l-2 border-primary/50 bg-muted/60 text-muted-foreground ${
               isOwn ? "ml-auto" : ""
             } hover:bg-muted transition-colors`}
             title="Jump to original message"
           >
-            ↩ {parentMsg.content.slice(0, 60)}
-            {parentMsg.content.length > 60 ? "…" : ""}
+            <span className="text-primary">↩</span>
+            <span className="truncate max-w-50">
+              {parentMsg.content.slice(0, 60)}{parentMsg.content.length > 60 ? "…" : ""}
+            </span>
           </button>
         )}
 
@@ -257,34 +259,34 @@ export default function MessageBubble({
           </div>
         ) : (
           <div
-            className={`group/message relative px-4 py-2.5 rounded-2xl text-sm leading-relaxed shadow-sm transition-all ${
+            className={`group/message relative px-4 py-2.5 rounded-2xl text-sm leading-relaxed transition-all ${
               isOwn
-                ? `bg-foreground text-background rounded-br-sm ${
-                    isOptimistic ? "opacity-60" : ""
+                ? `bg-primary text-primary-foreground rounded-br-sm shadow-sm shadow-primary/20 ${
+                    isOptimistic ? "optimistic-pulse" : ""
                   }`
-                : "bg-muted border border-border rounded-bl-sm"
-            } ${isDeleted ? "opacity-50 italic" : ""}`}
+                : "bg-card border border-border rounded-bl-sm shadow-sm"
+            } ${isDeleted ? "opacity-40 italic" : ""}`}
           >
             <div className="space-y-1">{renderedContent}</div>
-            <div className="flex items-center gap-1.5 mt-1 justify-end">
+            <div className="flex items-center gap-1.5 mt-1.5 justify-end">
               {isEdited && (
-                <span className="text-[0.625rem] opacity-50">edited</span>
+                <span className="text-[0.55rem] opacity-50 font-medium uppercase tracking-wider">edited</span>
               )}
               {isOwn && !isOptimistic && !isDeleted && (
-                <span className="text-[0.6875rem]">
+                <span className="text-[0.65rem]">
                   {msg.status === "read" ? (
-                    <span className="text-primary">✓✓</span>
+                    <span className="text-primary-foreground/70">✓✓</span>
                   ) : msg.status === "delivered" ? (
-                    <span className="opacity-70">✓✓</span>
+                    <span className="text-primary-foreground/50">✓✓</span>
                   ) : (
-                    <span className="opacity-50">✓</span>
+                    <span className="text-primary-foreground/30">✓</span>
                   )}
                 </span>
               )}
             </div>
             <div
-              className={`absolute top-1/2 -translate-y-1/2 text-[0.5625rem] font-medium text-muted-foreground opacity-0 group-hover/message:opacity-100 transition-opacity whitespace-nowrap ${
-                isOwn ? "-left-14" : "-right-14"
+              className={`absolute top-1/2 -translate-y-1/2 text-[0.55rem] font-medium text-muted-foreground opacity-0 group-hover/message:opacity-100 transition-opacity whitespace-nowrap ${
+                isOwn ? "-left-12" : "-right-12"
               }`}
             >
               {new Date(msg.createdAt).toLocaleTimeString([], {
@@ -306,14 +308,14 @@ export default function MessageBubble({
               <button
                 key={emoji}
                 onClick={() => onToggleReaction(emoji)}
-                className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-colors ${
+                className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-all ${
                   data.users.includes(userId)
-                    ? "bg-primary/10 border-primary/30"
-                    : "bg-muted/50 border-transparent hover:border-muted-foreground/20"
+                    ? "bg-primary/10 border-primary/25 text-primary"
+                    : "bg-muted/50 border-transparent hover:border-border/60 text-foreground"
                 }`}
               >
                 <span>{emoji}</span>
-                <span className="text-muted-foreground">{data.count}</span>
+                <span className="text-muted-foreground text-[0.6rem] font-medium">{data.count}</span>
               </button>
             ))}
           </div>
@@ -329,7 +331,7 @@ export default function MessageBubble({
               }}
               className={`absolute top-1/2 -translate-y-1/2 ${
                 isOwn ? "-left-8" : "-right-8"
-              } opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 rounded-full bg-muted hover:bg-muted-foreground/20 flex items-center justify-center text-sm`}
+              } opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 rounded-full bg-muted hover:bg-border flex items-center justify-center text-sm`}
               title="React"
             >
               😊
@@ -340,7 +342,7 @@ export default function MessageBubble({
                 onClick={(e) => e.stopPropagation()}
                 className={`absolute -top-12 ${
                   isOwn ? "right-0" : "left-0"
-                } z-10 flex items-center gap-1 px-2 py-1.5 rounded-full bg-popover border shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-300`}
+                } z-10 flex items-center gap-0.5 px-2 py-1.5 rounded-2xl bg-popover border border-border shadow-lg shadow-black/10 animate-in fade-in slide-in-from-bottom-2 duration-150`}
               >
                 {QUICK_EMOJIS.map((emoji) => (
                   <button
@@ -349,7 +351,7 @@ export default function MessageBubble({
                       onToggleReaction(emoji);
                       onSetPickerOpen(false);
                     }}
-                    className="text-lg w-8 h-8 rounded-full hover:bg-muted transition-colors flex items-center justify-center"
+                    className="text-base w-8 h-8 rounded-xl hover:bg-muted transition-colors flex items-center justify-center"
                   >
                     {emoji}
                   </button>
@@ -362,7 +364,7 @@ export default function MessageBubble({
                         onReply();
                         onSetPickerOpen(false);
                       }}
-                      className="text-xs px-2 h-8 rounded-full hover:bg-muted transition-colors text-muted-foreground flex items-center gap-1"
+                      className="text-xs px-2 h-8 rounded-xl hover:bg-muted transition-colors text-muted-foreground flex items-center gap-1"
                     >
                       <span>↩</span>
                       <span className="hidden sm:inline">Reply</span>

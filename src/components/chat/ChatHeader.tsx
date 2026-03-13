@@ -30,6 +30,19 @@ interface ChatHeaderProps {
   onOpenSidebar: () => void;
 }
 
+function getAvatarColor(name: string) {
+  const colors = [
+    "bg-cyan-500/20 text-cyan-400",
+    "bg-blue-500/20 text-blue-400",
+    "bg-violet-500/20 text-violet-400",
+    "bg-emerald-500/20 text-emerald-400",
+    "bg-rose-500/20 text-rose-400",
+    "bg-teal-500/20 text-teal-400",
+    "bg-indigo-500/20 text-indigo-400",
+  ];
+  return colors[name.charCodeAt(0) % colors.length];
+}
+
 export default function ChatHeader({
   chat,
   isPending,
@@ -53,50 +66,47 @@ export default function ChatHeader({
   onStopSharing,
   onOpenSidebar,
 }: ChatHeaderProps) {
+  const avatarColor = getAvatarColor(chat.name);
+  const isOnline = onlineUsers.length > 0;
+
   return (
-    <div className="h-16 px-3 md:px-6 border-b flex items-center gap-3 md:gap-4 shrink-0 bg-background/90 backdrop-blur-md">
+    <div className="h-[60px] px-3 md:px-5 border-b border-border flex items-center gap-3 shrink-0 bg-background/95 backdrop-blur-md">
+      {/* Mobile back */}
       <button
         onClick={onOpenSidebar}
-        className="md:hidden shrink-0 w-9 h-9 flex items-center justify-center rounded-full text-muted-foreground hover:bg-muted transition-colors"
+        className="md:hidden shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-muted transition-colors"
         aria-label="Open sidebar"
       >
-        <svg
-          className="w-5 h-5"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2}
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M15.75 19.5L8.25 12l7.5-7.5"
-          />
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
         </svg>
       </button>
 
-      <Avatar className="w-9 h-9 md:w-10 md:h-10 shrink-0">
-        <AvatarFallback
-          className={isPending ? "bg-muted text-muted-foreground" : ""}
-        >
+      <Avatar className="w-8 h-8 md:w-9 md:h-9 shrink-0">
+        <AvatarFallback className={`text-xs font-semibold ${avatarColor}`}>
           {chat.name[0].toUpperCase()}
         </AvatarFallback>
       </Avatar>
 
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold uppercase tracking-tight leading-tight truncate">
-          {chat.name}
-        </p>
-        <p className="text-[0.625rem] text-emerald-500 font-medium uppercase tracking-widest mt-0.5">
-          {isPending
-            ? "Pending invitation"
-            : onlineUsers.length > 0
-              ? "Active now"
-              : chat.role}
-        </p>
+        <p className="text-sm font-semibold truncate leading-tight">{chat.name}</p>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          {!isPending && (
+            <div className={`w-1.5 h-1.5 rounded-full transition-colors ${
+              isOnline ? "bg-emerald-500" : "bg-muted-foreground/40"
+            }`} />
+          )}
+          <span className="text-[0.6rem] text-muted-foreground">
+            {isPending
+              ? "Pending invitation"
+              : isOnline
+                ? `${onlineUsers.length} online`
+                : chat.role}
+          </span>
+        </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         <VoiceCallControls
           chatId={chat.id}
           canCall={!isPending && canWrite}

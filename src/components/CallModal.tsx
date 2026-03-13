@@ -144,7 +144,7 @@ export default function CallModal({
               }`}
             >
               <Avatar className="w-20 h-20 md:w-24 md:h-24">
-                <AvatarFallback className="text-2xl md:text-3xl bg-gradient-to-br from-blue-600 to-blue-800 text-white">
+                <AvatarFallback className="text-2xl md:text-3xl bg-linear-to-br from-blue-600 to-blue-800 text-white">
                   {currentUserInitial}
                 </AvatarFallback>
               </Avatar>
@@ -165,12 +165,12 @@ export default function CallModal({
                 }`}
               >
                 <Avatar className="w-20 h-20 md:w-24 md:h-24">
-                  <AvatarFallback className="text-2xl md:text-3xl bg-gradient-to-br from-amber-600 to-orange-800 text-white">
+                  <AvatarFallback className="text-2xl md:text-3xl bg-linear-to-br from-amber-600 to-orange-800 text-white">
                     {remoteInitial}
                   </AvatarFallback>
                 </Avatar>
               </div>
-              <span className="text-white/70 text-xs font-medium truncate max-w-[100px]">
+              <span className="text-white/70 text-xs font-medium truncate max-w-25">
                 {remoteName}
               </span>
             </div>

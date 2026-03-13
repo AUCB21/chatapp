@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { Paperclip, Send } from "lucide-react";
 
 interface MessageInputProps {
@@ -50,7 +48,7 @@ export default function MessageInput({
 
   if (!canWrite) {
     return (
-      <div className="px-6 py-4 border-t shrink-0 bg-background">
+      <div className="px-5 py-4 border-t border-border shrink-0 bg-background">
         <p className="text-xs text-muted-foreground text-center">
           You have read-only access to this chat.
         </p>
@@ -60,46 +58,43 @@ export default function MessageInput({
 
   return (
     <>
-      {/* Reply preview bar */}
       {replyTo && (
-        <div className="px-4 md:px-6 py-2.5 border-t bg-muted/50 flex items-center gap-3 shrink-0">
-          <div className="flex-1 min-w-0">
-            <p className="text-xs text-muted-foreground">Replying to:</p>
-            <p className="text-sm truncate">{replyTo.content}</p>
+        <div className="px-4 md:px-5 pt-3 pb-0 flex items-center gap-3 shrink-0">
+          <div className="flex-1 min-w-0 flex items-center gap-2.5 bg-muted/60 border border-border/60 rounded-xl px-3 py-2">
+            <div className="w-0.5 h-8 rounded-full bg-primary shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[0.6rem] font-medium text-primary uppercase tracking-wider mb-0.5">Replying</p>
+              <p className="text-xs text-muted-foreground truncate">{replyTo.content}</p>
+            </div>
+            <button
+              onClick={onJumpToReplyMessage}
+              className="text-[0.65rem] text-muted-foreground hover:text-foreground px-1.5 transition-colors shrink-0"
+            >
+              Jump
+            </button>
+            <button
+              onClick={onCancelReply}
+              className="w-5 h-5 flex items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-border transition-colors shrink-0"
+            >
+              <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            onClick={onJumpToReplyMessage}
-            className="shrink-0"
-          >
-            Jump
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onCancelReply}
-            className="shrink-0"
-          >
-            ✕
-          </Button>
         </div>
       )}
 
       <form
         onSubmit={handleSend}
-        className="px-4 md:px-6 py-3 md:py-4 border-t bg-background flex items-center gap-3 shrink-0"
+        className="px-4 md:px-5 py-3 md:py-4 border-t border-border bg-background flex items-end gap-2.5 shrink-0"
       >
-        <Button
+        <button
           type="button"
-          variant="ghost"
-          size="icon"
-          className="rounded-xl text-muted-foreground hover:bg-muted"
+          className="mb-0.5 w-9 h-9 flex items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
           title="Attach file"
         >
-          <Paperclip className="w-5 h-5" />
-        </Button>
+          <Paperclip className="w-4 h-4" />
+        </button>
 
         <textarea
           value={input}
@@ -109,18 +104,18 @@ export default function MessageInput({
             onTypingChange(value.trim().length > 0);
           }}
           onKeyDown={handleComposerKeyDown}
-          placeholder={replyTo ? "Reply…" : "Type a message…"}
+          placeholder={replyTo ? "Write a reply…" : "Type a message…"}
           rows={1}
-          className="flex-1 rounded-2xl min-h-11 max-h-36 bg-muted border-0 text-sm px-4 py-3 outline-none resize-none"
+          className="flex-1 rounded-2xl min-h-9.5 max-h-36 bg-muted/60 border border-border/60 text-sm px-4 py-2.5 outline-none resize-none focus:ring-1 focus:ring-ring/40 focus:border-border transition-all placeholder:text-muted-foreground/50"
         />
-        <Button
+
+        <button
           type="submit"
           disabled={!input.trim()}
-          size="icon"
-          className="rounded-2xl h-11 w-11"
+          className="mb-0.5 w-9 h-9 flex items-center justify-center rounded-xl bg-primary text-primary-foreground hover:opacity-90 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
         >
           <Send className="w-4 h-4" />
-        </Button>
+        </button>
       </form>
     </>
   );

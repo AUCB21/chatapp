@@ -17,8 +17,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Chat App",
-  description: "Minimal real-time chat",
+  title: "Pulse — Real-time Chat",
+  description: "Fast, minimal real-time messaging",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
