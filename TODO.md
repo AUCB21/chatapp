@@ -74,6 +74,19 @@
 ### 16. File / Image Sharing
 The `<Paperclip>` button is rendered but does nothing. Needs a file picker, upload to Supabase Storage, and a rendered preview/download in `MessageBubble`. Requires a new `attachments` column or table. Blocked by item 11 (storage hardening) if targeting production.
 
+- DB: add an `attachments` table keyed to `messages` with fields for `message_id`, `uploader_user_id`, `storage_key`, `original_name`, `mime_type`, `size_bytes`, `width`, `height`, and `created_at`.
+- DB: add indexes on `message_id` and `uploader_user_id`, plus FK cascade on `message_id` so attachment rows are cleaned up with deleted messages.
+- API: extend message send flow to support attachment metadata alongside text-only messages.
+- API: add a server upload flow for S3 using either presigned upload URLs or a server-side proxy upload route.
+- API: add a secure download/read flow so the client renders attachments via signed URLs instead of exposing raw bucket paths.
+- Validation: enforce allowed MIME types, max file size, max image dimensions, and filename normalization.
+- UI: wire the `Paperclip` button in `MessageInput` to a hidden file input with upload progress and failure states.
+- UI: render image thumbnails inline in `MessageBubble`, and render non-image files as downloadable attachment cards.
+- UI: support mixed messages where a user sends text plus one attachment, and define whether attachment-only messages are allowed.
+- Realtime/store: include attachment payloads in optimistic message creation, message fetches, retries, and pagination.
+- Lifecycle: decide whether deleting a message should only hide the attachment in chat or also enqueue the S3 object for deletion.
+- Security follow-up: after shipping, complete item 11 with per-user S3 path conventions, signed URL expiry, quotas, and cleanup rules.
+
 ---
 
 ## 🟡 Medium Priority — Noticeable product gaps
