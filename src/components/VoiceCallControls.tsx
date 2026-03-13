@@ -1,29 +1,39 @@
 "use client";
 
-import { useVoiceCall } from "@/hooks/useVoiceCall";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Mic, MicOff, Phone, PhoneOff } from "lucide-react";
 
 interface VoiceCallControlsProps {
   chatId: string | null;
-  chatName: string | null;
   canCall: boolean; // Whether user has permission to make calls
+  callStatus: VoiceCallStatus;
+  isMuted: boolean;
+  isIncomingCall: boolean;
+  caller: CallerInfo | null;
+  error: string | null;
+  onStartCall: () => Promise<void>;
+  onAnswerCall: () => Promise<void>;
+  onRejectCall: () => void;
+  onHangUp: () => void;
+  onToggleMute: () => void;
 }
 
-export default function VoiceCallControls({ chatId, chatName, canCall }: VoiceCallControlsProps) {
-  const {
-    callStatus,
-    isMuted,
-    isIncomingCall,
-    caller,
-    error,
-    startCall,
-    answerCall,
-    rejectCall,
-    hangUp,
-    toggleMute,
-  } = useVoiceCall(chatId);
+export default function VoiceCallControls({
+  chatId,
+  canCall,
+  callStatus,
+  isMuted,
+  isIncomingCall,
+  caller,
+  error,
+  onStartCall,
+  onAnswerCall,
+  onRejectCall,
+  onHangUp,
+  onToggleMute,
+}: VoiceCallControlsProps) {
 
   const [callDuration, setCallDuration] = useState(0);
 
@@ -45,13 +55,6 @@ export default function VoiceCallControls({ chatId, chatName, canCall }: VoiceCa
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleStartCall = () => {
-    if (!chatId || !chatName) return;
-    // In a real app, you'd get the actual user ID to call
-    // For now, we use the chat ID as a placeholder
-    startCall(chatId, chatName);
-  };
-
   // Don't render if no active chat or no call permission
   if (!chatId || !canCall) return null;
 
@@ -66,19 +69,19 @@ export default function VoiceCallControls({ chatId, chatName, canCall }: VoiceCa
 
       {/* Incoming call notification */}
       {isIncomingCall && caller && (
-        <div className="flex items-center gap-2 bg-blue-50 px-3 py-2 rounded-lg border border-blue-200">
-          <span className="text-sm font-medium text-blue-900">
-            📞 {caller.name} is calling...
+        <div className="flex items-center gap-2 bg-muted px-3 py-2 rounded-xl border">
+          <span className="text-sm text-foreground/90">
+            {caller.name} is calling...
           </span>
           <Button
-            onClick={answerCall}
+            onClick={onAnswerCall}
             size="sm"
-            className="bg-green-600 hover:bg-green-700 h-7 text-xs"
+            className="h-8 text-xs bg-green-600 hover:bg-green-700 text-white"
           >
             Answer
           </Button>
           <Button
-            onClick={rejectCall}
+            onClick={onRejectCall}
             size="sm"
             variant="destructive"
             className="h-7 text-xs"
@@ -94,80 +97,60 @@ export default function VoiceCallControls({ chatId, chatName, canCall }: VoiceCa
           {/* Idle - show call button */}
           {callStatus === 'idle' && (
             <Button
-              onClick={handleStartCall}
-              size="sm"
-              className="gap-2 bg-green-600 hover:bg-green-700"
+              onClick={onStartCall}
+              className="h-9 px-4 rounded-xl text-[0.625rem] uppercase tracking-wider bg-green-600 hover:bg-green-700 text-white gap-2"
             >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
-              </svg>
-              Start Call
+              <Phone className="w-3.5 h-3.5" />
+              Call
             </Button>
           )}
 
           {/* Calling - show status */}
           {callStatus === 'calling' && (
-            <div className="flex items-center gap-2 bg-blue-50 px-3 py-2 rounded-lg border border-blue-200">
-              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-              <span className="text-sm font-medium text-blue-900">Calling...</span>
+            <div className="flex items-center gap-2">
               <Button
-                onClick={hangUp}
-                size="sm"
-                variant="destructive"
-                className="h-7 w-7 p-0"
+                onClick={onHangUp}
+                className="h-9 px-4 rounded-xl text-[0.625rem] uppercase tracking-wider bg-red-500 hover:bg-red-600 text-white gap-2"
               >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
-                </svg>
+                <PhoneOff className="w-3.5 h-3.5" />
+                Cancel
               </Button>
+              <Badge variant="secondary" className="h-8 rounded-lg">
+                Calling…
+              </Badge>
             </div>
           )}
 
           {/* Connected - show controls */}
           {callStatus === 'connected' && (
-            <div className="flex items-center gap-2 bg-green-50 px-3 py-2 rounded-lg border border-green-200">
-              <div className="w-2 h-2 bg-green-500 rounded-full" />
-              <span className="text-sm font-medium text-green-900 tabular-nums">
-                {formatDuration(callDuration)}
-              </span>
-              
-              {/* Mute/Unmute */}
+            <div className="flex items-center gap-2">
               <Button
-                onClick={toggleMute}
-                size="sm"
-                variant={isMuted ? 'destructive' : 'secondary'}
-                className="h-7 w-7 p-0"
-                title={isMuted ? 'Unmute' : 'Mute'}
+                onClick={onHangUp}
+                className="h-9 px-4 rounded-xl text-[0.625rem] uppercase tracking-wider bg-red-500 hover:bg-red-600 text-white gap-2"
               >
-                {isMuted ? (
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd" />
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
-                  </svg>
-                )}
+                <PhoneOff className="w-3.5 h-3.5" />
+                Hang up
               </Button>
 
-              {/* Hang up */}
               <Button
-                onClick={hangUp}
+                onClick={onToggleMute}
                 size="sm"
-                variant="destructive"
-                className="h-7 w-7 p-0"
-                title="End call"
+                variant="outline"
+                className="h-9 w-9 p-0 rounded-xl"
+                title={isMuted ? 'Unmute' : 'Mute'}
               >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
-                </svg>
+                {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
               </Button>
+
+              <Badge variant="secondary" className="h-8 rounded-lg tabular-nums">
+                {formatDuration(callDuration)}
+              </Badge>
             </div>
           )}
 
           {/* Ended */}
           {callStatus === 'ended' && (
-            <Badge variant="outline" className="text-sm">
+            <Badge variant="outline" className="text-xs rounded-lg">
               Call ended
             </Badge>
           )}

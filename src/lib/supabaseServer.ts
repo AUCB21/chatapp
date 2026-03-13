@@ -7,14 +7,16 @@ import { cookies } from "next/headers";
  * Use this in API routes and Server Components.
  */
 export async function createSupabaseServer() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseUrl =
+    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey =
+    process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
     // Provide clear error message for runtime
     const error = new Error(
       "Missing Supabase environment variables. " +
-      "Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your Vercel project settings: " +
+      "Please set SUPABASE_URL and SUPABASE_ANON_KEY (or fallback NEXT_PUBLIC equivalents) in your Vercel project settings: " +
       "https://vercel.com/dashboard -> Your Project -> Settings -> Environment Variables"
     );
     console.error("[Supabase] Configuration error:", error.message);

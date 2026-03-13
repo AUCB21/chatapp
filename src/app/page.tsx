@@ -3,19 +3,24 @@
 import { useState, useEffect, useRef, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useChat } from "@/hooks/useChat";
+import { usePresence } from "@/hooks/usePresence";
 import { useSessionStore } from "@/store/sessionStore";
+import { groupReactions } from "@/store/chatStore";
 import { useScreenShare } from "@/hooks/useScreenShare";
 import { useVoiceCall } from "@/hooks/useVoiceCall";
 import NewChatModal from "@/components/NewChatModal";
-import VoiceCallControls from "@/components/VoiceCallControls";
-import ScreenShareControls from "@/components/ScreenShareControls";
+import DeleteChatDialog from "@/components/chat/DeleteChatDialog";
 import ScreenShareViewer from "@/components/ScreenShareViewer";
+import CallModal from "@/components/CallModal";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import ChatSidebar from "@/components/chat/ChatSidebar";
+import ChatHeader from "@/components/chat/ChatHeader";
+import MessageBubble from "@/components/chat/MessageBubble";
+import MessageInput from "@/components/chat/MessageInput";
+import PendingPrompt from "@/components/chat/PendingPrompt";
+import EmptyChatState from "@/components/chat/EmptyChatState";
 
 export default function ChatPage() {
   const router = useRouter();
@@ -25,68 +30,121 @@ export default function ChatPage() {
   const {
     chats,
     messages,
+    reactions,
     activeChatId,
     canWrite,
     loading,
     error,
     setActiveChat,
     sendMessage,
+    editMessage,
+    deleteMessage,
+    deleteChat,
+    toggleReaction,
     refreshChats,
     joinChat,
     declineChat,
   } = useChat();
 
-  const { shareStatus, presenter } = useScreenShare(activeChatId);
-  const { callStatus } = useVoiceCall(activeChatId);
+  const {
+    shareStatus,
+    isIncomingShare,
+    presenter,
+    error: shareError,
+    remoteStream,
+    startSharing,
+    stopSharing,
+    rejectShare,
+  } = useScreenShare(activeChatId);
+  const {
+    callStatus,
+    isMuted,
+    isIncomingCall,
+    caller,
+    error: callError,
+    startCall,
+    answerCall,
+    rejectCall,
+    hangUp,
+    toggleMute,
+  } = useVoiceCall(activeChatId);
+  const { onlineUsers, typingUsers, startTyping, stopTyping } =
+    usePresence(activeChatId);
 
   const [input, setInput] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joiningChatId, setJoiningChatId] = useState<string | null>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const [contextMenuMsgId, setContextMenuMsgId] = useState<string | null>(null);
+  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
+  const [replyTo, setReplyTo] = useState<{
+    id: string;
+    content: string;
+  } | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<
+    string | null
+  >(null);
+  const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  const reactionGrouped = groupReactions(reactions);
+  const activeChat = chats.find((c) => c.id === activeChatId);
+  const isPending = activeChat?.role === "pending";
+
+  /* ── Effects ── */
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [activeChatId, messages.length]);
 
-  // Check scroll position to show/hide scroll-to-bottom button
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
-
-    // Find the ScrollArea viewport element
-    const viewport = container.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement;
+    const viewport = container.querySelector(
+      '[data-slot="scroll-area-viewport"]'
+    ) as HTMLElement;
     if (!viewport) return;
-
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = viewport;
-      const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
-      setShowScrollButton(!isNearBottom && messages.length > 0);
+      setShowScrollButton(
+        scrollHeight - scrollTop - clientHeight > 100 && messages.length > 0
+      );
     };
-
-    viewport.addEventListener('scroll', handleScroll);
-    return () => viewport.removeEventListener('scroll', handleScroll);
+    viewport.addEventListener("scroll", handleScroll);
+    return () => viewport.removeEventListener("scroll", handleScroll);
   }, [messages.length, activeChatId]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  // Clear join error when switching chats
   useEffect(() => {
     setJoinError(null);
   }, [activeChatId]);
 
+  useEffect(() => {
+    if (!showEmojiPicker) return;
+    const close = () => setShowEmojiPicker(null);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [showEmojiPicker]);
+
+  useEffect(() => {
+    if (!contextMenuMsgId) return;
+    const close = () => setContextMenuMsgId(null);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [contextMenuMsgId]);
+
+  /* ── Handlers ── */
+
   async function handleLogout() {
-    // Clear server-side session
     await fetch("/api/auth/logout", { method: "POST" });
-    
-    // Clear client-side Supabase session from localStorage
     const { supabase } = await import("@/lib/supabaseClient");
     await supabase.auth.signOut();
-    
     clearSession();
     router.push("/login");
   }
@@ -96,7 +154,52 @@ export default function ChatPage() {
     if (!input.trim()) return;
     const content = input;
     setInput("");
-    await sendMessage(content);
+    stopTyping();
+    await sendMessage(content, replyTo?.id);
+    setReplyTo(null);
+  }
+
+  function handleInputChange(value: string) {
+    setInput(value);
+    value.trim() ? startTyping() : stopTyping();
+  }
+
+  function handleContextMenu(
+    e: React.MouseEvent,
+    msgId: string,
+    isOwn: boolean
+  ) {
+    if (!isOwn) {
+      e.preventDefault();
+      setShowEmojiPicker(msgId);
+      return;
+    }
+    e.preventDefault();
+    setContextMenuMsgId(msgId);
+    setContextMenuPos({ x: e.clientX, y: e.clientY });
+  }
+
+  function handleStartEdit(msgId: string, content: string) {
+    setEditingMessageId(msgId);
+    setEditContent(content);
+    setContextMenuMsgId(null);
+  }
+
+  async function handleSaveEdit() {
+    if (!editingMessageId || !editContent.trim()) return;
+    await editMessage(editingMessageId, editContent.trim());
+    setEditingMessageId(null);
+    setEditContent("");
+  }
+
+  async function handleDelete(msgId: string) {
+    setContextMenuMsgId(null);
+    await deleteMessage(msgId);
+  }
+
+  function handleReply(msgId: string, content: string) {
+    setReplyTo({ id: msgId, content: content.slice(0, 80) });
+    setContextMenuMsgId(null);
   }
 
   async function handleJoin(chatId: string) {
@@ -125,338 +228,293 @@ export default function ChatPage() {
     }
   }
 
-  const activeChat = chats.find((c) => c.id === activeChatId);
-  const isPending = activeChat?.role === "pending";
+  const handleSelectChat = (chatId: string) => {
+    setActiveChat(chatId);
+    setSidebarOpen(false);
+  };
+
+  const handleNewChat = () => {
+    setModalOpen(true);
+    setSidebarOpen(false);
+  };
+
+  function handleJumpToMessage(messageId: string) {
+    const target = document.querySelector(
+      `[data-message-id="${messageId}"]`
+    ) as HTMLElement | null;
+
+    if (!target) return;
+
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightedMessageId(messageId);
+
+    window.setTimeout(() => {
+      setHighlightedMessageId((prev) => (prev === messageId ? null : prev));
+    }, 1500);
+  }
+
+  /* ── Render ── */
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
-
-      {/* ── Sidebar ── */}
-      <aside className="w-95 shrink-0 border-r flex flex-col">
-
-        {/* Header */}
-        <div className="px-5 h-16 border-b flex items-center justify-between shrink-0">
-          <span className="font-semibold text-base tracking-tight">Chat App</span>
-          <div className="flex items-center gap-4">
-            <span className="text-xs text-muted-foreground truncate max-w-30">
-              {user?.email}
-            </span>
-            <Button
-              onClick={handleLogout}
-              variant="ghost"
-              size="sm"
-              className="text-xs h-auto py-1"
-            >
-              Logout
-            </Button>
-          </div>
-        </div>
-
-        {/* Chat list */}
-        <div className="flex-1 overflow-hidden">
-          <ScrollArea className="h-full">
-
-            {/* New chat — first row */}
-            <button
-              onClick={() => setModalOpen(true)}
-              className="w-full text-left px-5 py-4 border-b flex items-center gap-4 hover:bg-muted transition"
-            >
-              <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center shrink-0 text-primary-foreground">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="w-6 h-6"
-                >
-                  <path d="M6 12L3.269 3.125A59.8 59.8 0 0 1 21.486 12a59.8 59.8 0 0 1-18.217 8.875zm0 0h7.5"/>
-                </svg>
-              </div>
-            <div>
-              <p className="text-sm font-medium">New chat</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Invite someone by email</p>
-            </div>
-          </button>
-
-          {loading.chats && (
-            <p className="text-xs text-muted-foreground px-5 py-4">Loading chats…</p>
-          )}
-          {error.chats && (
-            <p className="text-xs text-destructive px-5 py-4">{error.chats}</p>
-          )}
-          {!loading.chats && chats.length === 0 && (
-            <p className="text-xs text-muted-foreground text-center px-5 py-10">
-              No chats yet.
-            </p>
-          )}
-
-          {chats.map((chat) => {
-            const isActive = chat.id === activeChatId;
-            const pending = chat.role === "pending";
-            const isJoining = joiningChatId === chat.id;
-            return (
-              <div
-                key={chat.id}
-                onClick={() => setActiveChat(chat.id)}
-                className={`w-full text-left px-5 py-4 border-b flex items-center gap-4 transition cursor-pointer ${
-                  isActive ? "bg-muted" : "hover:bg-muted/50"
-                }`}
-              >
-                <Avatar className="w-12 h-12 shrink-0">
-                  <AvatarFallback className={pending ? "bg-muted text-muted-foreground" : ""}>
-                    {chat.name[0].toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-
-                <div className="flex-1 min-w-0">
-                  <p
-                    className={`text-sm font-semibold truncate ${
-                      pending ? "text-muted-foreground" : ""
-                    }`}
-                  >
-                    {chat.name}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {pending ? "Invited" : chat.role}
-                  </p>
-                </div>
-
-                {pending && (
-                  <div
-                    className="flex gap-1.5 shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Button
-                      onClick={() => handleJoin(chat.id)}
-                      disabled={!!joiningChatId}
-                      size="sm"
-                      className="text-xs h-auto px-3 py-1.5 rounded-full"
-                    >
-                      {isJoining ? "…" : "Accept"}
-                    </Button>
-                    <Button
-                      onClick={() => handleDecline(chat.id)}
-                      disabled={!!joiningChatId}
-                      variant="secondary"
-                      size="sm"
-                      className="text-xs h-auto px-3 py-1.5 rounded-full"
-                    >
-                      Decline
-                    </Button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          </ScrollArea>
-        </div>
+    <div className="flex h-dvh bg-background text-foreground overflow-hidden">
+      {/* Desktop sidebar */}
+      <aside className="hidden md:flex w-[20rem] shrink-0 border-r flex-col">
+        <ChatSidebar
+          chats={chats}
+          activeChatId={activeChatId}
+          loading={loading.chats}
+          error={error.chats}
+          userEmail={user?.email}
+          joiningChatId={joiningChatId}
+          onSelectChat={handleSelectChat}
+          onJoin={handleJoin}
+          onDecline={handleDecline}
+          onNewChat={handleNewChat}
+          onLogout={handleLogout}
+          onDeleteChat={setDeletingChatId}
+        />
       </aside>
 
-      {/* ── Main panel ── */}
-      <main className="flex-1 flex flex-col min-w-0">
+      {/* Mobile sidebar */}
+      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        <SheetContent side="left" className="w-[80vw] max-w-sm p-0 flex flex-col">
+          <SheetTitle className="sr-only">Navigation</SheetTitle>
+          <ChatSidebar
+            chats={chats}
+            activeChatId={activeChatId}
+            loading={loading.chats}
+            error={error.chats}
+            userEmail={user?.email}
+            joiningChatId={joiningChatId}
+            onSelectChat={handleSelectChat}
+            onJoin={handleJoin}
+            onDecline={handleDecline}
+            onNewChat={handleNewChat}
+            onLogout={handleLogout}
+            onDeleteChat={setDeletingChatId}
+          />
+        </SheetContent>
+      </Sheet>
+
+      {/* Main panel */}
+      <main className="flex-1 flex flex-col min-w-0 bg-background">
         {activeChat ? (
           <>
-            {/* Chat header */}
-            <div className="h-16 px-6 border-b flex items-center gap-4 shrink-0">
-              <Avatar className="w-10 h-10 shrink-0">
-                <AvatarFallback className={isPending ? "bg-muted text-muted-foreground" : ""}>
-                  {activeChat.name[0].toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1">
-                <p className="text-sm font-semibold leading-tight">
-                  {activeChat.name}
-                </p>
-                <p className="text-xs text-muted-foreground capitalize mt-0.5">
-                  {isPending ? "Pending invitation" : activeChat.role}
-                </p>
-              </div>
-              
-              {/* Voice call controls */}
-              <VoiceCallControls
-                chatId={activeChatId}
-                chatName={activeChat.name}
-                canCall={!isPending && canWrite}
-              />
-              
-              {/* Screen share controls */}
-              <ScreenShareControls
-                chatId={activeChatId}
-                chatName={activeChat.name}
-                canShare={!isPending && canWrite}
-                isInCall={callStatus === 'connected'}
-              />
-            </div>
+            <ChatHeader
+              chat={activeChat}
+              isPending={!!isPending}
+              onlineUsers={onlineUsers}
+              callStatus={callStatus}
+              isMuted={isMuted}
+              isIncomingCall={isIncomingCall}
+              caller={caller}
+              callError={callError}
+              canWrite={canWrite}
+              onStartCall={startCall}
+              onAnswerCall={answerCall}
+              onRejectCall={rejectCall}
+              onHangUp={hangUp}
+              onToggleMute={toggleMute}
+              shareStatus={shareStatus}
+              isIncomingShare={isIncomingShare}
+              presenter={presenter}
+              shareError={shareError}
+              onStartSharing={startSharing}
+              onStopSharing={stopSharing}
+              onOpenSidebar={() => setSidebarOpen(true)}
+            />
 
-            {/* Pending: accept / decline prompt */}
             {isPending ? (
-              <div className="flex-1 flex items-center justify-center px-6">
-                <div className="text-center max-w-xs">
-                  <Avatar className="w-16 h-16 mx-auto mb-5">
-                    <AvatarFallback className="bg-muted text-muted-foreground text-2xl">
-                      {activeChat.name[0].toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <p className="text-sm font-semibold mb-1">
-                    {activeChat.name}
-                  </p>
-                  <p className="text-xs text-muted-foreground mb-7">
-                    You&apos;ve been invited to join this chat.
-                    Accept to start reading and sending messages.
-                  </p>
-
-                  {joinError && (
-                    <p className="text-xs text-destructive mb-4">{joinError}</p>
-                  )}
-
-                  <div className="flex gap-3 justify-center">
-                    <Button
-                      onClick={() => handleJoin(activeChatId!)}
-                      disabled={!!joiningChatId}
-                      size="lg"
-                      className="px-7 rounded-full"
-                    >
-                      {joiningChatId === activeChatId ? "Joining…" : "Accept"}
-                    </Button>
-                    <Button
-                      onClick={() => handleDecline(activeChatId!)}
-                      disabled={!!joiningChatId}
-                      variant="secondary"
-                      size="lg"
-                      className="px-7 rounded-full"
-                    >
-                      Decline
-                    </Button>
-                  </div>
-                </div>
-              </div>
+              <PendingPrompt
+                chat={activeChat}
+                joiningChatId={joiningChatId}
+                joinError={joinError}
+                onJoin={handleJoin}
+                onDecline={handleDecline}
+              />
             ) : (
               <>
                 {/* Messages */}
-                <div className="flex-1 overflow-hidden relative" ref={messagesContainerRef}>
-                  <ScrollArea className="h-full px-6 py-5">
+                <div
+                  className="flex-1 overflow-hidden relative"
+                  ref={messagesContainerRef}
+                >
+                  <ScrollArea className="h-full px-4 md:px-6 py-4 md:py-6">
                     <div className="flex flex-col gap-1">
-                    {loading.messages && (
-                      <p className="text-xs text-muted-foreground text-center py-4">
-                        Loading messages…
-                      </p>
-                    )}
-                    {!loading.messages && messages.length === 0 && (
-                      <p className="text-xs text-muted-foreground text-center py-10">
-                        No messages yet. Say something!
-                      </p>
-                    )}
+                      {loading.messages && (
+                        <p className="text-xs text-muted-foreground text-center py-4">
+                          Loading messages…
+                        </p>
+                      )}
+                      {!loading.messages && messages.length === 0 && (
+                        <p className="text-xs text-muted-foreground text-center py-10">
+                          No messages yet. Say something!
+                        </p>
+                      )}
 
-                    {messages.map((msg, i) => {
-                      const isOwn =
-                        msg.userId === user?.id || msg.userId === "optimistic";
-                      const isOptimistic = msg.id.startsWith("optimistic-");
-                      const prevMsg = messages[i - 1];
-                      const isSameUser = prevMsg?.userId === msg.userId;
+                      {messages.map((msg, i) => {
+                        const isOwn =
+                          msg.userId === user?.id ||
+                          msg.userId === "optimistic";
+                        const prevMsg = messages[i - 1];
+                        const parentMsg = msg.parentId
+                          ? (messages.find((m) => m.id === msg.parentId) ??
+                            null)
+                          : null;
 
-                      return (
-                        <div
-                          key={msg.id}
-                          className={`flex ${isOwn ? "justify-end" : "justify-start"} ${
-                            isSameUser ? "mt-0.5" : "mt-4"
-                          }`}
-                        >
+                        return (
                           <div
-                            className={`max-w-[65%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                              isOwn
-                                ? `bg-primary text-primary-foreground rounded-br-sm ${isOptimistic ? "opacity-60" : ""}`
-                                : "bg-muted rounded-bl-sm"
-                            }`}
+                            key={msg.id}
+                            data-message-id={msg.id}
+                            className="scroll-mt-24"
                           >
-                            <p className="whitespace-pre-wrap wrap-break-word">
-                              {msg.content}
-                            </p>
-                            <p className="text-[11px] mt-1 opacity-70 text-right">
-                              {new Date(msg.createdAt).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </p>
+                            <MessageBubble
+                              msg={msg}
+                              isOwn={isOwn}
+                              isOptimistic={msg.id.startsWith("optimistic-")}
+                              isSameUser={prevMsg?.userId === msg.userId}
+                              parentMsg={parentMsg}
+                              isHighlighted={highlightedMessageId === msg.id}
+                              msgReactions={reactionGrouped[msg.id]}
+                              editContent={
+                                editingMessageId === msg.id
+                                  ? editContent
+                                  : null
+                              }
+                              isAnyEditing={!!editingMessageId}
+                              isPickerOpen={showEmojiPicker === msg.id}
+                              userId={user?.id || ""}
+                              canWrite={canWrite}
+                              onContextMenu={(e) =>
+                                handleContextMenu(e, msg.id, isOwn)
+                              }
+                              onEditContent={setEditContent}
+                              onSaveEdit={handleSaveEdit}
+                              onCancelEdit={() => setEditingMessageId(null)}
+                              onToggleReaction={(emoji) =>
+                                toggleReaction(msg.id, emoji)
+                              }
+                              onSetPickerOpen={(open) =>
+                                setShowEmojiPicker(open ? msg.id : null)
+                              }
+                              onReply={() =>
+                                handleReply(msg.id, msg.content)
+                              }
+                              onJumpToMessage={handleJumpToMessage}
+                            />
                           </div>
+                        );
+                      })}
+
+                      {/* Typing indicator */}
+                      {typingUsers.length > 0 && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <div className="flex gap-0.5">
+                            {[0, 150, 300].map((delay) => (
+                              <span
+                                key={delay}
+                                className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce"
+                                style={{ animationDelay: `${delay}ms` }}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {typingUsers.length === 1
+                              ? `${typingUsers[0].email.split("@")[0]} is typing…`
+                              : `${typingUsers.length} people typing…`}
+                          </span>
                         </div>
-                      );
-                    })}
-                    <div ref={messagesEndRef} />
+                      )}
+
+                      <div ref={messagesEndRef} />
                     </div>
                   </ScrollArea>
-                  
-                  {/* Scroll to bottom button */}
+
+                  {/* Context menu */}
+                  {contextMenuMsgId && (
+                    <div
+                      className="fixed z-50 bg-popover border rounded-xl shadow-lg py-1 min-w-35"
+                      style={{
+                        top: contextMenuPos.y,
+                        left: contextMenuPos.x,
+                      }}
+                    >
+                      <button
+                        onClick={() => {
+                          const msg = messages.find(
+                            (m) => m.id === contextMenuMsgId
+                          );
+                          if (msg) handleReply(msg.id, msg.content);
+                        }}
+                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted transition-colors"
+                      >
+                        Reply
+                      </button>
+                      <button
+                        onClick={() => {
+                          const msg = messages.find(
+                            (m) => m.id === contextMenuMsgId
+                          );
+                          if (msg && !msg.deletedAt)
+                            handleStartEdit(msg.id, msg.content);
+                        }}
+                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted transition-colors"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(contextMenuMsgId)}
+                        className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-muted transition-colors"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Scroll to bottom */}
                   {showScrollButton && (
                     <Button
-                      onClick={scrollToBottom}
-                      size="sm"
-                      className="absolute bottom-6 right-6 rounded-full shadow-lg gap-2 z-10"
+                      onClick={() =>
+                        messagesEndRef.current?.scrollIntoView({
+                          behavior: "smooth",
+                        })
+                      }
+                      size="icon"
+                      className="absolute bottom-6 right-6 rounded-xl shadow-lg z-10"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 13.5L12 21m0 0l-7.5-7.5M12 21V3" />
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M19.5 13.5L12 21m0 0l-7.5-7.5M12 21V3"
+                        />
                       </svg>
-                      Go to bottom
                     </Button>
                   )}
                 </div>
 
-                {/* Input area */}
-                {canWrite ? (
-                  <form
-                    onSubmit={handleSend}
-                    className="px-5 py-4 border-t flex items-center gap-3 shrink-0"
-                  >
-                    <Input
-                      type="text"
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      placeholder="Type a message…"
-                      className="flex-1 rounded-full"
-                    />
-                    <Button
-                      type="submit"
-                      disabled={!input.trim()}
-                      className="rounded-full px-6"
-                    >
-                      Send
-                    </Button>
-                  </form>
-                ) : (
-                  <div className="px-6 py-4 border-t shrink-0">
-                    <p className="text-xs text-muted-foreground text-center">
-                      You have read-only access to this chat.
-                    </p>
-                  </div>
-                )}
+                <MessageInput
+                  canWrite={canWrite}
+                  input={input}
+                  replyTo={replyTo}
+                  onInputChange={handleInputChange}
+                  onSend={handleSend}
+                  onJumpToReplyMessage={() =>
+                    replyTo && handleJumpToMessage(replyTo.id)
+                  }
+                  onCancelReply={() => setReplyTo(null)}
+                />
               </>
             )}
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-                <svg
-                  className="w-7 h-7 text-muted-foreground"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z"
-                  />
-                </svg>
-              </div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Select a chat to start messaging
-              </p>
-            </div>
-          </div>
+          <EmptyChatState onOpenSidebar={() => setSidebarOpen(true)} />
         )}
       </main>
 
@@ -469,11 +527,42 @@ export default function ChatPage() {
         }}
       />
 
-      {/* Screen Share Viewer */}
+      {(() => {
+        const deletingChat = deletingChatId ? chats.find((c) => c.id === deletingChatId) : null;
+        return (
+          <DeleteChatDialog
+            open={!!deletingChat}
+            chatName={deletingChat?.name ?? ""}
+            isAdmin={deletingChat?.role === "admin"}
+            onClose={() => setDeletingChatId(null)}
+            onDelete={(mode) => deleteChat(deletingChatId!, mode)}
+          />
+        );
+      })()}
+
       <ScreenShareViewer
-        isActive={shareStatus === 'viewing'}
+        isActive={shareStatus === "viewing"}
         presenterName={presenter?.name || null}
-        onClose={() => {}}
+        remoteStream={remoteStream}
+        onClose={rejectShare}
+      />
+
+      <CallModal
+        chatName={activeChat?.name ?? ""}
+        callStatus={callStatus}
+        isMuted={isMuted}
+        caller={caller}
+        error={callError}
+        isIncomingCall={isIncomingCall}
+        currentUserEmail={user?.email ?? null}
+        remoteParticipantName={caller?.name ?? null}
+        onAnswerCall={answerCall}
+        onRejectCall={rejectCall}
+        onHangUp={hangUp}
+        onToggleMute={toggleMute}
+        shareStatus={shareStatus}
+        onStartSharing={startSharing}
+        onStopSharing={stopSharing}
       />
     </div>
   );

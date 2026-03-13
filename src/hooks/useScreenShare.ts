@@ -18,6 +18,7 @@ interface UseScreenShareReturn {
   isIncomingShare: boolean;
   presenter: PresenterInfo | null;
   error: string | null;
+  remoteStream: MediaStream | null;
   startSharing: (options: ScreenShareOptions) => Promise<void>;
   stopSharing: () => void;
   acceptShare: () => void;
@@ -32,48 +33,30 @@ export function useScreenShare(chatId: string | null): UseScreenShareReturn {
   const [isIncomingShare, setIsIncomingShare] = useState(false);
   const [presenter, setPresenter] = useState<PresenterInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const remoteStreamRef = useRef<MediaStream | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+  const iceCandidateQueue = useRef<RTCIceCandidateInit[]>([]);
+  const endedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Refs for values accessed inside signal handlers
   const userIdRef = useRef(userId);
   userIdRef.current = userId;
   const shareStatusRef = useRef(shareStatus);
   shareStatusRef.current = shareStatus;
 
-  // Check screen share support
   useEffect(() => {
     if (!isScreenShareSupported()) {
-      setError(
-        "Screen sharing is not supported in your browser. Please use Chrome, Firefox, Safari, or Edge."
-      );
+      setError("Screen sharing is not supported in your browser.");
     }
   }, []);
 
-  // Initialize remote video element
-  useEffect(() => {
-    if (typeof window !== "undefined" && !remoteVideoRef.current) {
-      remoteVideoRef.current = document.createElement("video");
-      remoteVideoRef.current.autoplay = true;
-      remoteVideoRef.current.playsInline = true;
-      remoteVideoRef.current.style.display = "none";
-      document.body.appendChild(remoteVideoRef.current);
-    }
-
-    return () => {
-      if (remoteVideoRef.current && document.body.contains(remoteVideoRef.current)) {
-        document.body.removeChild(remoteVideoRef.current);
-      }
-    };
-  }, []);
-
-  // --- Cleanup ---
   const cleanupShare = useCallback(() => {
     if (peerConnectionRef.current) {
+      peerConnectionRef.current.onicecandidate = null;
+      peerConnectionRef.current.ontrack = null;
+      peerConnectionRef.current.onconnectionstatechange = null;
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
     }
@@ -81,16 +64,17 @@ export function useScreenShare(chatId: string | null): UseScreenShareReturn {
     stopScreenShare(localStreamRef.current);
     localStreamRef.current = null;
 
-    stopScreenShare(remoteStreamRef.current);
-    remoteStreamRef.current = null;
-
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = null;
+    if (endedTimerRef.current) {
+      clearTimeout(endedTimerRef.current);
+      endedTimerRef.current = null;
     }
 
     setShareStatus("idle");
     setIsIncomingShare(false);
     setPresenter(null);
+    setError(null);
+    setRemoteStream(null);
+    iceCandidateQueue.current = [];
   }, []);
 
   const cleanupChannel = useCallback(() => {
@@ -100,13 +84,8 @@ export function useScreenShare(chatId: string | null): UseScreenShareReturn {
     }
   }, []);
 
-  // --- Send signal via Realtime ---
   const sendSignal = useCallback(async (signal: ScreenShareSignalType) => {
-    if (!channelRef.current) {
-      console.warn("[ScreenShare] Cannot send signal: channel not ready");
-      return;
-    }
-
+    if (!channelRef.current) return;
     try {
       await channelRef.current.send({
         type: "broadcast",
@@ -118,7 +97,20 @@ export function useScreenShare(chatId: string | null): UseScreenShareReturn {
     }
   }, []);
 
-  // --- Peer connection event listeners ---
+  const flushIceCandidates = useCallback(async () => {
+    const pc = peerConnectionRef.current;
+    if (!pc || !pc.remoteDescription) return;
+
+    const queued = iceCandidateQueue.current.splice(0);
+    for (const candidate of queued) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.error("[ScreenShare] Failed to add queued ICE candidate:", err);
+      }
+    }
+  }, []);
+
   const setupPeerConnectionListeners = useCallback(
     (pc: RTCPeerConnection, isPresenter: boolean) => {
       pc.onicecandidate = (event) => {
@@ -132,21 +124,15 @@ export function useScreenShare(chatId: string | null): UseScreenShareReturn {
       };
 
       pc.ontrack = (event) => {
-        const [remoteStream] = event.streams;
-        remoteStreamRef.current = remoteStream;
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = remoteStream;
-        }
+        const [stream] = event.streams;
+        setRemoteStream(stream);
         if (!isPresenter) {
           setShareStatus("viewing");
         }
       };
 
       pc.onconnectionstatechange = () => {
-        console.log("[ScreenShare] Connection state:", pc.connectionState);
-        if (pc.connectionState === "connected") {
-          console.log("[ScreenShare] Connection established");
-        } else if (
+        if (
           pc.connectionState === "failed" ||
           pc.connectionState === "disconnected"
         ) {
@@ -165,12 +151,7 @@ export function useScreenShare(chatId: string | null): UseScreenShareReturn {
       const uid = userIdRef.current;
       if (!uid) return;
 
-      const status = shareStatusRef.current;
-
-      if (status !== "idle") {
-        console.log("[ScreenShare] Already in a share session, ignoring offer");
-        return;
-      }
+      if (shareStatusRef.current !== "idle") return;
 
       setPresenter({ id: payload.from, name: payload.fromName });
       setIsIncomingShare(true);
@@ -186,6 +167,7 @@ export function useScreenShare(chatId: string | null): UseScreenShareReturn {
         await peerConnectionRef.current.setRemoteDescription(
           new RTCSessionDescription(payload.offer)
         );
+        await flushIceCandidates();
 
         const answer = await peerConnectionRef.current.createAnswer();
         await peerConnectionRef.current.setLocalDescription(answer);
@@ -195,118 +177,107 @@ export function useScreenShare(chatId: string | null): UseScreenShareReturn {
           from: uid,
           answer,
         });
-      } catch (err) {
-        console.error("[ScreenShare] Failed to handle offer:", err);
+      } catch {
         setError("Failed to process screen share");
         cleanupShare();
       }
     },
-    [setupPeerConnectionListeners, sendSignal, cleanupShare]
+    [setupPeerConnectionListeners, sendSignal, cleanupShare, flushIceCandidates]
   );
 
   const handleAnswer = useCallback(
     async (payload: Extract<ScreenShareSignalType, { type: "screen-answer" }>) => {
       if (!peerConnectionRef.current) return;
-      await peerConnectionRef.current.setRemoteDescription(
-        new RTCSessionDescription(payload.answer)
-      );
-      setShareStatus("sharing");
+      try {
+        await peerConnectionRef.current.setRemoteDescription(
+          new RTCSessionDescription(payload.answer)
+        );
+        await flushIceCandidates();
+        setShareStatus("sharing");
+      } catch {
+        setError("Failed to complete screen share setup");
+        cleanupShare();
+      }
     },
-    []
+    [cleanupShare, flushIceCandidates]
   );
 
   const handleIceCandidate = useCallback(
     async (payload: Extract<ScreenShareSignalType, { type: "screen-ice-candidate" }>) => {
       if (!peerConnectionRef.current) return;
-      await peerConnectionRef.current.addIceCandidate(
-        new RTCIceCandidate(payload.candidate)
-      );
+
+      if (!peerConnectionRef.current.remoteDescription) {
+        iceCandidateQueue.current.push(payload.candidate);
+        return;
+      }
+
+      try {
+        await peerConnectionRef.current.addIceCandidate(
+          new RTCIceCandidate(payload.candidate)
+        );
+      } catch (err) {
+        console.error("[ScreenShare] Failed to add ICE candidate:", err);
+      }
     },
     []
   );
 
-  const handleShareEnd = useCallback(() => {
-    cleanupShare();
-    setShareStatus("ended");
-    setTimeout(() => setShareStatus("idle"), 2000);
-  }, [cleanupShare]);
+  const showEnded = useCallback(
+    (msg?: string) => {
+      cleanupShare();
+      if (msg) setError(msg);
+      setShareStatus("ended");
+      endedTimerRef.current = setTimeout(() => {
+        endedTimerRef.current = null;
+        setShareStatus("idle");
+        setError(null);
+      }, msg ? 3000 : 2000);
+    },
+    [cleanupShare]
+  );
 
-  const handleShareRejected = useCallback(() => {
-    cleanupShare();
-    setError("Screen share was declined");
-    setShareStatus("ended");
-    setTimeout(() => {
-      setShareStatus("idle");
-      setError(null);
-    }, 3000);
-  }, [cleanupShare]);
-
-  // --- Stable ref for signal dispatch ---
   const handleSignalRef = useRef<(payload: ScreenShareSignalType) => Promise<void>>();
   handleSignalRef.current = async (payload: ScreenShareSignalType) => {
     switch (payload.type) {
       case "screen-offer":
-        await handleIncomingOffer(payload);
-        break;
+        return handleIncomingOffer(payload);
       case "screen-answer":
-        await handleAnswer(payload);
-        break;
+        return handleAnswer(payload);
       case "screen-ice-candidate":
-        await handleIceCandidate(payload);
-        break;
+        return handleIceCandidate(payload);
       case "screen-end":
-        handleShareEnd();
-        break;
+        return showEnded();
       case "screen-reject":
-        handleShareRejected();
-        break;
+        return showEnded("Screen share was declined");
     }
   };
 
-  // --- Setup Realtime channel for signaling ---
+  // --- Realtime channel ---
   useEffect(() => {
     if (!chatId || !userId) return;
 
-    console.log("[ScreenShare] Setting up screen share channel for chat:", chatId);
     const channel = supabase.channel(`screen:${chatId}`);
 
     channel
-      .on(
-        "broadcast",
-        { event: "screen-signal" },
-        async ({ payload }: { payload: ScreenShareSignalType }) => {
-          if (payload.from === userIdRef.current) return;
-
-          console.log(
-            "[ScreenShare] Received signal:",
-            payload.type,
-            "from:",
-            payload.from
-          );
-          try {
-            await handleSignalRef.current?.(payload);
-          } catch (err) {
-            console.error("[ScreenShare] Error handling screen signal:", err);
-          }
+      .on("broadcast", { event: "screen-signal" }, async ({ payload }: { payload: ScreenShareSignalType }) => {
+        if (payload.from === userIdRef.current) return;
+        try {
+          await handleSignalRef.current?.(payload);
+        } catch (err) {
+          console.error("[ScreenShare] Error handling signal:", err);
         }
-      )
-      .subscribe((status, err) => {
-        console.log(`[ScreenShare] Channel screen:${chatId} →`, status, err ?? "");
-        if (err) {
-          console.error("[ScreenShare] Subscription error:", err);
-        }
-      });
+      })
+      .subscribe();
 
     channelRef.current = channel;
 
     return () => {
-      console.log("[ScreenShare] Cleaning up channel");
       cleanupChannel();
       cleanupShare();
     };
   }, [chatId, userId, cleanupChannel, cleanupShare]);
 
-  // --- Public API ---
+  // --- Actions ---
 
   const startSharing = useCallback(
     async (options: ScreenShareOptions) => {
@@ -315,32 +286,24 @@ export function useScreenShare(chatId: string | null): UseScreenShareReturn {
         return;
       }
 
-      if (shareStatus !== "idle") {
-        console.log("[ScreenShare] Already sharing/viewing");
-        return;
-      }
+      if (shareStatus !== "idle") return;
 
       try {
         setError(null);
         setShareStatus("starting");
 
-        // Request screen access
         const stream = await requestScreenShare(options);
         localStreamRef.current = stream;
 
-        // Handle user stopping share via browser button
         stream.getVideoTracks()[0].onended = () => {
-          console.log("[ScreenShare] User stopped sharing via browser");
           stopSharing();
         };
 
-        // Create peer connection
         const pc = createPeerConnection();
         setupPeerConnectionListeners(pc, true);
         addStreamToPeer(pc, stream);
         peerConnectionRef.current = pc;
 
-        // Create and send offer
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
@@ -350,15 +313,8 @@ export function useScreenShare(chatId: string | null): UseScreenShareReturn {
           fromName: userEmail || "Anonymous",
           offer,
         });
-
-        console.log("[ScreenShare] Screen share offer sent");
       } catch (err) {
-        console.error("[ScreenShare] Failed to start sharing:", err);
-        if (err instanceof Error) {
-          setError(err.message);
-        } else {
-          setError("Failed to start screen sharing");
-        }
+        setError(err instanceof Error ? err.message : "Failed to start screen sharing");
         cleanupShare();
       }
     },
@@ -367,46 +323,17 @@ export function useScreenShare(chatId: string | null): UseScreenShareReturn {
 
   const stopSharing = useCallback(() => {
     if (!userId) return;
-
-    sendSignal({
-      type: "screen-end",
-      from: userId,
-    });
-
+    sendSignal({ type: "screen-end", from: userId });
     cleanupShare();
   }, [userId, sendSignal, cleanupShare]);
 
-  const acceptShare = useCallback(() => {
-    // Auto-accepted when receiving offer
-    console.log("[ScreenShare] Screen share accepted");
-  }, []);
+  const acceptShare = useCallback(() => {}, []);
 
   const rejectShare = useCallback(() => {
     if (!userId) return;
-
-    sendSignal({
-      type: "screen-reject",
-      from: userId,
-    });
-
+    sendSignal({ type: "screen-reject", from: userId });
     cleanupShare();
   }, [userId, sendSignal, cleanupShare]);
 
-  // Expose the remote video element for rendering
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      (window as any).__screenShareVideoElement = remoteVideoRef.current;
-    }
-  }, []);
-
-  return {
-    shareStatus,
-    isIncomingShare,
-    presenter,
-    error,
-    startSharing,
-    stopSharing,
-    acceptShare,
-    rejectShare,
-  };
+  return { shareStatus, isIncomingShare, presenter, error, remoteStream, startSharing, stopSharing, acceptShare, rejectShare };
 }

@@ -1,9 +1,9 @@
-import { and, eq, asc } from "drizzle-orm";
+import { and, eq, asc, isNull, sql } from "drizzle-orm";
 import { db } from "../index";
-import { messages, memberships } from "../schema";
+import { messages, memberships, readReceipts, reactions } from "../schema";
 
 /**
- * Fetches all messages for a chat.
+ * Fetches all messages for a chat (excluding soft-deleted).
  * Single condition: user must be a member.
  * Returns empty array if not a member (no error leak).
  */
@@ -19,7 +19,7 @@ export async function getMessages(userId: string, chatId: string) {
   return db
     .select()
     .from(messages)
-    .where(eq(messages.chatId, chatId))
+    .where(and(eq(messages.chatId, chatId), isNull(messages.deletedAt)))
     .orderBy(asc(messages.createdAt));
 }
 
@@ -29,12 +29,190 @@ export async function getMessages(userId: string, chatId: string) {
 export async function createMessage(
   userId: string,
   chatId: string,
-  content: string
+  content: string,
+  parentId?: string | null
 ) {
   const [message] = await db
     .insert(messages)
-    .values({ userId, chatId, content })
+    .values({ userId, chatId, content, parentId: parentId || null })
     .returning();
 
   return message;
+}
+
+/**
+ * Edit a message. Only the author can edit.
+ */
+export async function editMessage(
+  userId: string,
+  messageId: string,
+  newContent: string
+) {
+  const [updated] = await db
+    .update(messages)
+    .set({ content: newContent, editedAt: new Date() })
+    .where(and(eq(messages.id, messageId), eq(messages.userId, userId)))
+    .returning();
+
+  return updated ?? null;
+}
+
+/**
+ * Soft-delete a message. Only the author can delete.
+ */
+export async function deleteMessage(userId: string, messageId: string) {
+  const [deleted] = await db
+    .update(messages)
+    .set({ deletedAt: new Date(), content: "[Message deleted]" })
+    .where(and(eq(messages.id, messageId), eq(messages.userId, userId)))
+    .returning();
+
+  return deleted ?? null;
+}
+
+/**
+ * Update message delivery status.
+ */
+export async function updateMessageStatus(
+  messageId: string,
+  status: "delivered" | "read"
+) {
+  const [updated] = await db
+    .update(messages)
+    .set({ status })
+    .where(eq(messages.id, messageId))
+    .returning();
+
+  return updated ?? null;
+}
+
+/**
+ * Mark messages as delivered when the recipient opens the chat.
+ */
+export async function markDelivered(chatId: string, userId: string) {
+  await db
+    .update(messages)
+    .set({ status: "delivered" })
+    .where(
+      and(
+        eq(messages.chatId, chatId),
+        eq(messages.status, "sent"),
+        sql`${messages.userId} != ${userId}`
+      )
+    );
+}
+
+/**
+ * Mark messages as read when the user views the chat.
+ */
+export async function markRead(chatId: string, userId: string) {
+  // Update all unread messages in this chat that aren't from this user
+  await db
+    .update(messages)
+    .set({ status: "read" })
+    .where(
+      and(
+        eq(messages.chatId, chatId),
+        sql`${messages.status} != 'read'`,
+        sql`${messages.userId} != ${userId}`
+      )
+    );
+
+  // Upsert read receipt
+  await db
+    .insert(readReceipts)
+    .values({ userId, chatId, lastReadAt: new Date() })
+    .onConflictDoUpdate({
+      target: [readReceipts.userId, readReceipts.chatId],
+      set: { lastReadAt: new Date() },
+    });
+}
+
+/**
+ * Get read receipts for a chat.
+ */
+export async function getReadReceipts(chatId: string) {
+  return db
+    .select()
+    .from(readReceipts)
+    .where(eq(readReceipts.chatId, chatId));
+}
+
+/**
+ * Get reactions for messages in a chat.
+ */
+export async function getReactionsForChat(chatId: string) {
+  return db
+    .select({
+      id: reactions.id,
+      messageId: reactions.messageId,
+      userId: reactions.userId,
+      emoji: reactions.emoji,
+      createdAt: reactions.createdAt,
+    })
+    .from(reactions)
+    .innerJoin(messages, eq(reactions.messageId, messages.id))
+    .where(eq(messages.chatId, chatId));
+}
+
+/**
+ * Add a reaction to a message.
+ */
+export async function addReaction(
+  userId: string,
+  messageId: string,
+  emoji: string
+) {
+  const [reaction] = await db
+    .insert(reactions)
+    .values({ userId, messageId, emoji })
+    .onConflictDoNothing()
+    .returning();
+
+  return reaction ?? null;
+}
+
+/**
+ * Remove a reaction from a message.
+ */
+export async function removeReaction(
+  userId: string,
+  messageId: string,
+  emoji: string
+) {
+  const [deleted] = await db
+    .delete(reactions)
+    .where(
+      and(
+        eq(reactions.userId, userId),
+        eq(reactions.messageId, messageId),
+        eq(reactions.emoji, emoji)
+      )
+    )
+    .returning();
+
+  return deleted ?? null;
+}
+
+/**
+ * Get thread replies for a parent message.
+ */
+export async function getThreadReplies(parentId: string) {
+  return db
+    .select()
+    .from(messages)
+    .where(and(eq(messages.parentId, parentId), isNull(messages.deletedAt)))
+    .orderBy(asc(messages.createdAt));
+}
+
+/**
+ * Get the reply count for a message.
+ */
+export async function getReplyCount(parentId: string) {
+  const [result] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(messages)
+    .where(and(eq(messages.parentId, parentId), isNull(messages.deletedAt)));
+
+  return result?.count ?? 0;
 }

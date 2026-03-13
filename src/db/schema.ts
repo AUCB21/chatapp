@@ -6,6 +6,7 @@ import {
   pgEnum,
   primaryKey,
   index,
+  boolean,
 } from "drizzle-orm/pg-core";
 
 // --- Enums ---
@@ -15,6 +16,24 @@ export const invitationStatusEnum = pgEnum("invitation_status", [
   "pending",
   "accepted",
   "declined",
+]);
+export const messageStatusEnum = pgEnum("message_status", [
+  "sent",
+  "delivered",
+  "read",
+]);
+export const callStatusEnum = pgEnum("call_status", [
+  "ringing",
+  "active",
+  "ended",
+]);
+export const callParticipantRoleEnum = pgEnum("call_participant_role", [
+  "host",
+  "participant",
+]);
+export const callParticipantStateEnum = pgEnum("call_participant_state", [
+  "joined",
+  "left",
 ]);
 
 // --- Tables ---
@@ -62,11 +81,98 @@ export const messages = pgTable(
       .references(() => chats.id, { onDelete: "cascade" }),
     userId: uuid("user_id").notNull(), // FK → auth.users(id), set in SQL
     content: text("content").notNull(),
+    status: messageStatusEnum("status").notNull().default("sent"),
+    parentId: uuid("parent_id"), // FK → messages(id), for threaded replies
+    editedAt: timestamp("edited_at"),
+    deletedAt: timestamp("deleted_at"), // soft delete
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => ({
     chatIdx: index("messages_chat_idx").on(t.chatId),
     userIdx: index("messages_user_idx").on(t.userId),
+    parentIdx: index("messages_parent_idx").on(t.parentId),
+  })
+);
+
+/**
+ * read_receipts: tracks when a user last read messages in a chat.
+ */
+export const readReceipts = pgTable(
+  "read_receipts",
+  {
+    userId: uuid("user_id").notNull(),
+    chatId: uuid("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    lastReadAt: timestamp("last_read_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.chatId] }),
+  })
+);
+
+/**
+ * reactions: emoji reactions on messages.
+ */
+export const reactions = pgTable(
+  "reactions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull(),
+    emoji: text("emoji").notNull(), // e.g. "👍", "❤️", "😂"
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    messageIdx: index("reactions_message_idx").on(t.messageId),
+    uniqueReaction: index("reactions_unique_idx").on(t.messageId, t.userId, t.emoji),
+  })
+);
+
+/**
+ * call_sessions: a single call lifecycle scoped to a chat.
+ */
+export const callSessions = pgTable(
+  "call_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    chatId: uuid("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    createdByUserId: uuid("created_by_user_id").notNull(), // FK → auth.users(id)
+    status: callStatusEnum("status").notNull().default("ringing"),
+    startedAt: timestamp("started_at"),
+    endedAt: timestamp("ended_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    chatIdx: index("call_sessions_chat_idx").on(t.chatId),
+    statusIdx: index("call_sessions_status_idx").on(t.status),
+  })
+);
+
+/**
+ * call_participants: per-user state for a call session.
+ */
+export const callParticipants = pgTable(
+  "call_participants",
+  {
+    callId: uuid("call_id")
+      .notNull()
+      .references(() => callSessions.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull(), // FK → auth.users(id)
+    role: callParticipantRoleEnum("role").notNull().default("participant"),
+    state: callParticipantStateEnum("state").notNull().default("joined"),
+    isMuted: boolean("is_muted").notNull().default(false),
+    joinedAt: timestamp("joined_at").defaultNow().notNull(),
+    leftAt: timestamp("left_at"),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.callId, t.userId] }),
+    userIdx: index("call_participants_user_idx").on(t.userId),
+    stateIdx: index("call_participants_state_idx").on(t.state),
   })
 );
 
@@ -98,8 +204,18 @@ export type Chat = typeof chats.$inferSelect;
 export type Membership = typeof memberships.$inferSelect;
 export type Message = typeof messages.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
+export type ReadReceipt = typeof readReceipts.$inferSelect;
+export type Reaction = typeof reactions.$inferSelect;
+export type CallSession = typeof callSessions.$inferSelect;
+export type CallParticipant = typeof callParticipants.$inferSelect;
 export type MemberRole = (typeof memberRoleEnum.enumValues)[number];
 export type InvitationStatus = (typeof invitationStatusEnum.enumValues)[number];
+export type MessageStatus = (typeof messageStatusEnum.enumValues)[number];
+export type CallStatus = (typeof callStatusEnum.enumValues)[number];
+export type CallParticipantRole =
+  (typeof callParticipantRoleEnum.enumValues)[number];
+export type CallParticipantState =
+  (typeof callParticipantStateEnum.enumValues)[number];
 
 // Auth user type — sourced from Supabase, not Drizzle
 export type AuthUser = {

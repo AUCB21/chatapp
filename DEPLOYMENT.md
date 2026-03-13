@@ -8,6 +8,8 @@ Make sure these are set in your Vercel project settings:
 # Supabase Configuration
 NEXT_PUBLIC_SUPABASE_URL=https://[your-project-ref].supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGci...
+SUPABASE_URL=https://[your-project-ref].supabase.co
+SUPABASE_ANON_KEY=eyJhbGci...
 
 # Database Connection (Pooler - Port 6543)
 DATABASE_URL=postgresql://postgres:[password]@[project-ref].pooler.supabase.com:6543/postgres
@@ -84,7 +86,7 @@ Look for error messages printed by the API routes.
 
 #### Missing Supabase Keys
 **Error**: `Missing Supabase environment variables`
-**Fix**: Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in Vercel
+**Fix**: Add `SUPABASE_URL` and `SUPABASE_ANON_KEY` (plus `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` for browser client) in Vercel
 
 ### 3. Test Locally First
 
