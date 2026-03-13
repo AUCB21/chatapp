@@ -48,3 +48,12 @@ Failed messages (network error during optimistic send) currently disappear silen
 
 ### 13. Header Back-To-Home Behavior
 When a chat is open, the left arrow in `ChatHeader` should return to "select chat" mode (clear `activeChatId`) instead of only opening/toggling sidebar behavior. This should work consistently on mobile and desktop layouts.
+
+### 14. Single Message Deletion Modes
+Add per-message deletion options using the same dual logic pattern: **delete for me** and **delete for everybody**. If deleted for everybody, the message should remain in timeline with replacement text: **"message deleted by sender"**.
+
+### 15. Per-User Supabase Storage Handling
+Implement or refactor storage handling with Supabase Storage (S3-style object storage) scoped per user. Include clear path strategy, access rules, and upload/download lifecycle for attachments.
+
+### 16. Me-to-Me Personal Chat
+Add a self-chat feature so each user has a personal conversation space (notes/saved messages). This should appear as a dedicated chat and work with normal message, media, and search flows.
