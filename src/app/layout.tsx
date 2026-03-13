@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Pulse — Real-time Chat",
+  title: "EPS Chat App — Real-time Chat",
   description: "Fast, minimal real-time messaging",
 };
 

@@ -1,4 +1,4 @@
-# Chat App — What to Build Next
+# EPS Chat App — What to Build Next
 
 ## 🔴 High Priority — Users will hit these immediately
 
@@ -45,3 +45,6 @@ No per-chat notification control. Users cannot mute noisy chats or see an unread
 
 ### 12. Retry on Failed Optimistic Send
 Failed messages (network error during optimistic send) currently disappear silently. Should persist in the UI with a "Failed — tap to retry" state and a re-send action.
+
+### 13. Header Back-To-Home Behavior
+When a chat is open, the left arrow in `ChatHeader` should return to "select chat" mode (clear `activeChatId`) instead of only opening/toggling sidebar behavior. This should work consistently on mobile and desktop layouts.

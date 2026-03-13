@@ -70,7 +70,7 @@ export default function ChatHeader({
   const isOnline = onlineUsers.length > 0;
 
   return (
-    <div className="h-[60px] px-3 md:px-5 border-b border-border flex items-center gap-3 shrink-0 bg-background/95 backdrop-blur-md">
+    <div className="h-15 px-3 md:px-5 border-b border-border flex items-center gap-3 shrink-0 bg-background/95 backdrop-blur-md">
       {/* Mobile back */}
       <button
         onClick={onOpenSidebar}

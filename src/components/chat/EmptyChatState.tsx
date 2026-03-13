@@ -42,7 +42,7 @@ export default function EmptyChatState({ onOpenSidebar }: EmptyChatStateProps) {
         <h2 className="text-base font-semibold tracking-tight mb-2">
           No conversation selected
         </h2>
-        <p className="text-xs text-muted-foreground max-w-[200px] leading-relaxed">
+        <p className="text-xs text-muted-foreground max-w-50 leading-relaxed">
           Pick a chat from the sidebar or start a new one.
         </p>
 

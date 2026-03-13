@@ -82,7 +82,7 @@ export default function ChatSidebar({
               <path d="M14 1H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2v3l4-3h6a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1z" />
             </svg>
           </div>
-          <span className="text-sm font-semibold tracking-tight">Pulse</span>
+          <span className="text-sm font-semibold tracking-tight">EPS Chat App</span>
         </div>
         <div className="flex items-center gap-0.5">
           <button

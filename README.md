@@ -1,4 +1,4 @@
-# Chat App
+# EPS Chat App
 
 Real-time chat application built with Next.js 15, Supabase, Drizzle ORM, and Zustand.
 
