@@ -76,7 +76,6 @@ export function usePresence(chatId: string | null): UsePresenceReturn {
             isTyping: false,
             lastSeen: new Date().toISOString(),
           });
-          console.log(`[Presence] ${chatId}: tracking`);
         }
       });
 

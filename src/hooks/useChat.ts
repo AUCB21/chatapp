@@ -37,6 +37,8 @@ interface UseChatReturn {
 
 export function useChat(): UseChatReturn {
   const isReady = useSupabaseAuth();
+  const userId = useSessionStore((s) => s.user?.id ?? null);
+  const userEmail = useSessionStore((s) => s.user?.email ?? null);
 
   const {
     chats,
@@ -51,6 +53,7 @@ export function useChat(): UseChatReturn {
     setReactions,
     addReaction: addReactionToStore,
     removeReaction: removeReactionFromStore,
+    setMembership,
     removeMembership,
     setLoading,
     setError,
@@ -77,6 +80,7 @@ export function useChat(): UseChatReturn {
   const activeMembership = useChatStore(activeMembershipSelector);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const declineRemovalTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // --- Fetch all accessible chats on mount ---
 
@@ -107,49 +111,36 @@ export function useChat(): UseChatReturn {
   // Requires Realtime to be enabled on all three tables in Supabase.
 
   useEffect(() => {
-    if (!isReady) return;
+    if (!isReady || !userId) return;
 
     const channel = supabase
       .channel("chat-list-changes")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "chats" },
+        {
+          event: "*",
+          schema: "public",
+          table: "memberships",
+          filter: `user_id=eq.${userId}`,
+        },
         () => { refreshChats(); }
       )
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "memberships" },
+        {
+          event: "*",
+          schema: "public",
+          table: "invitations",
+          ...(userEmail ? { filter: `invited_email=eq.${userEmail}` } : {}),
+        },
         () => { refreshChats(); }
       )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "invitations" },
-        () => { refreshChats(); }
-      )
-      .on(
-        "postgres_changes",
-        { event: "DELETE", schema: "public", table: "chats" },
-        () => { refreshChats(); }
-      )
-      .on(
-        "postgres_changes",
-        { event: "DELETE", schema: "public", table: "memberships" },
-        () => { refreshChats(); }
-      )
-      .subscribe((status, err) => {
-        if (status === "SUBSCRIBED") {
-          console.log("[Realtime] chat-list-changes: subscribed");
-        } else if (status === "CHANNEL_ERROR") {
-          console.warn("[Realtime] chat-list-changes: channel error (will retry)", err ?? "");
-        } else if (status === "TIMED_OUT") {
-          console.warn("[Realtime] chat-list-changes: timed out (will retry)");
-        }
-      });
+      .subscribe();
 
     return () => {
       channel.unsubscribe();
     };
-  }, [isReady]);
+  }, [isReady, userId, userEmail, refreshChats]);
 
   // --- Fetch messages + subscribe to Realtime when active chat changes ---
   // Also re-runs when the user accepts a pending invitation (role changes).
@@ -169,31 +160,40 @@ export function useChat(): UseChatReturn {
       setLoading("messages", true);
       setError("messages", null);
 
-      try {
-        const res = await fetch(`/api/chat/${activeChatId}/messages`);
+      const existingMessages = useChatStore.getState().messages[activeChatId];
+      if (!existingMessages || existingMessages.length === 0) {
+        try {
+          const res = await fetch(`/api/chat/${activeChatId}/messages`);
 
-        if (res.status === 403) {
-          _setActiveChat(null as unknown as string);
+          if (res.status === 403) {
+            _setActiveChat(null as unknown as string);
+            return;
+          }
+
+          if (!res.ok) throw new Error("Failed to fetch messages");
+
+          const { data } = await res.json();
+          if (data.messages) {
+            setMessages(activeChatId!, data.messages);
+            setReactions(activeChatId!, data.reactions ?? []);
+          } else {
+            setMessages(activeChatId!, data);
+          }
+        } catch (e) {
+          setError("messages", e instanceof Error ? e.message : "Unknown error");
           return;
+        } finally {
+          setLoading("messages", false);
         }
-
-        if (!res.ok) throw new Error("Failed to fetch messages");
-
-        const { data } = await res.json();
-        // API now returns { messages, reactions }
-        if (data.messages) {
-          setMessages(activeChatId!, data.messages);
-          setReactions(activeChatId!, data.reactions ?? []);
-        } else {
-          // Fallback for old API format (array of messages)
-          setMessages(activeChatId!, data);
-        }
-      } catch (e) {
-        setError("messages", e instanceof Error ? e.message : "Unknown error");
-        return;
-      } finally {
+      } else {
         setLoading("messages", false);
       }
+
+      const isReactionForActiveChat = (messageId: string) =>
+        useChatStore
+          .getState()
+          .messages[activeChatId!]
+          ?.some((message) => message.id === messageId) ?? false;
 
       const channel = supabase
         .channel(`messages:${activeChatId}`)
@@ -207,7 +207,6 @@ export function useChat(): UseChatReturn {
             filter: `chat_id=eq.${activeChatId}`,
           },
           (payload) => {
-            console.log("[Realtime] postgres_changes message INSERT:", payload.new);
             const raw = payload.new as Record<string, unknown>;
             const incoming: Message = {
               id: raw.id as string,
@@ -233,7 +232,6 @@ export function useChat(): UseChatReturn {
             filter: `chat_id=eq.${activeChatId}`,
           },
           (payload) => {
-            console.log("[Realtime] postgres_changes message UPDATE:", payload.new);
             const raw = payload.new as Record<string, unknown>;
             updateMessage(activeChatId!, raw.id as string, {
               content: raw.content as string,
@@ -253,9 +251,11 @@ export function useChat(): UseChatReturn {
           },
           (payload) => {
             const raw = payload.new as Record<string, unknown>;
+            const messageId = raw.message_id as string;
+            if (!isReactionForActiveChat(messageId)) return;
             addReactionToStore(activeChatId!, {
               id: raw.id as string,
-              messageId: raw.message_id as string,
+              messageId,
               userId: raw.user_id as string,
               emoji: raw.emoji as string,
               createdAt: new Date(raw.created_at as string),
@@ -272,7 +272,8 @@ export function useChat(): UseChatReturn {
           },
           (payload) => {
             const raw = payload.old as Record<string, unknown>;
-            if (raw.id) {
+            const messageId = raw.message_id as string | undefined;
+            if (raw.id && messageId && isReactionForActiveChat(messageId)) {
               removeReactionFromStore(activeChatId!, raw.id as string);
             }
           }
@@ -282,7 +283,6 @@ export function useChat(): UseChatReturn {
           "broadcast",
           { event: "new-message" },
           (payload) => {
-            console.log("[Realtime] broadcast message:", payload.payload);
             const msg = payload.payload as Message;
             appendMessage(activeChatId!, {
               ...msg,
@@ -303,15 +303,7 @@ export function useChat(): UseChatReturn {
             });
           }
         )
-        .subscribe((status, err) => {
-          if (status === "SUBSCRIBED") {
-            console.log(`[Realtime] messages:${activeChatId}: subscribed`);
-          } else if (status === "CHANNEL_ERROR") {
-            console.warn(`[Realtime] messages:${activeChatId}: channel error (will retry)`, err ?? "");
-          } else if (status === "TIMED_OUT") {
-            console.warn(`[Realtime] messages:${activeChatId}: timed out (will retry)`);
-          }
-        });
+        .subscribe();
 
       channelRef.current = channel;
     }
@@ -505,10 +497,10 @@ export function useChat(): UseChatReturn {
           }
         }
       } catch (e) {
-        console.error("[toggleReaction]", e);
+        setError("messages", e instanceof Error ? e.message : "Failed to toggle reaction");
       }
     },
-    [activeChatId]
+    [activeChatId, setError]
   );
 
   // --- Delete a chat ---
@@ -549,15 +541,39 @@ export function useChat(): UseChatReturn {
 
   const declineChat = useCallback(
     async (chatId: string): Promise<void> => {
-      const res = await fetch(`/api/chat/${chatId}/join`, { method: "DELETE" });
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.error ?? "Failed to decline invitation");
+      setMembership(chatId, "declined");
+
+      const existingTimer = declineRemovalTimersRef.current[chatId];
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+        delete declineRemovalTimersRef.current[chatId];
       }
-      removeMembership(chatId);
+
+      try {
+        const res = await fetch(`/api/chat/${chatId}/join`, { method: "DELETE" });
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json.error ?? "Failed to decline invitation");
+        }
+
+        declineRemovalTimersRef.current[chatId] = setTimeout(() => {
+          removeMembership(chatId);
+          delete declineRemovalTimersRef.current[chatId];
+        }, 2000);
+      } catch (e) {
+        setMembership(chatId, "pending");
+        throw e;
+      }
     },
-    [removeMembership]
+    [removeMembership, setMembership]
   );
+
+  useEffect(() => {
+    return () => {
+      Object.values(declineRemovalTimersRef.current).forEach(clearTimeout);
+      declineRemovalTimersRef.current = {};
+    };
+  }, []);
 
   const setActiveChat = useCallback((chatId: string) => {
     _setActiveChat(chatId);

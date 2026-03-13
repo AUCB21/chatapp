@@ -22,7 +22,6 @@ interface NewChatModalProps {
 type ModalState =
   | { kind: "idle" }
   | { kind: "submitting" }
-  | { kind: "success"; chatName: string }
   | { kind: "error"; message: string };
 
 export default function NewChatModal({
@@ -33,16 +32,15 @@ export default function NewChatModal({
   const [chatName, setChatName] = useState("");
   const [invitedEmail, setInvitedEmail] = useState("");
   const [state, setState] = useState<ModalState>({ kind: "idle" });
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   function handleOpenChange(isOpen: boolean) {
     if (!isOpen) {
       onClose();
-      // Reset state when closing
-      setTimeout(() => {
-        setChatName("");
-        setInvitedEmail("");
-        setState({ kind: "idle" });
-      }, 200);
+      setChatName("");
+      setInvitedEmail("");
+      setState({ kind: "idle" });
+      setSuccessMessage(null);
     }
   }
 
@@ -51,6 +49,7 @@ export default function NewChatModal({
     if (!chatName.trim() || !invitedEmail.trim()) return;
 
     setState({ kind: "submitting" });
+    setSuccessMessage(null);
 
     try {
       const res = await fetch("/api/invite", {
@@ -69,7 +68,10 @@ export default function NewChatModal({
         return;
       }
 
-      setState({ kind: "success", chatName: json.data.chatName });
+      setState({ kind: "idle" });
+      setChatName("");
+      setInvitedEmail("");
+      setSuccessMessage(`Invitation sent for “${json.data.chatName}”.`);
       onChatCreated(json.data.chatId);
     } catch {
       setState({ kind: "error", message: "Network error" });
@@ -79,75 +81,63 @@ export default function NewChatModal({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
-        {state.kind !== "success" ? (
-          <>
-            <DialogHeader>
-              <DialogTitle>New chat</DialogTitle>
-              <DialogDescription>
-                Create a new chat and invite someone to join.
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="chatName">Chat name</Label>
-                <Input
-                  id="chatName"
-                  type="text"
-                  value={chatName}
-                  onChange={(e) => setChatName(e.target.value)}
-                  placeholder="e.g. Project Alpha"
-                  maxLength={100}
-                  required
-                  autoFocus
-                />
-              </div>
+        <>
+          <DialogHeader>
+            <DialogTitle>New chat</DialogTitle>
+            <DialogDescription>
+              Create a new chat and invite someone to join.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="chatName">Chat name</Label>
+              <Input
+                id="chatName"
+                type="text"
+                value={chatName}
+                onChange={(e) => setChatName(e.target.value)}
+                placeholder="e.g. Project Alpha"
+                maxLength={100}
+                required
+                autoFocus
+              />
+            </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="invitedEmail">Invite via email</Label>
-                <Input
-                  id="invitedEmail"
-                  type="email"
-                  value={invitedEmail}
-                  onChange={(e) => setInvitedEmail(e.target.value)}
-                  placeholder="friend@example.com"
-                  required
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="invitedEmail">Invite via email</Label>
+              <Input
+                id="invitedEmail"
+                type="email"
+                value={invitedEmail}
+                onChange={(e) => setInvitedEmail(e.target.value)}
+                placeholder="friend@example.com"
+                required
+              />
+            </div>
 
-              {state.kind === "error" && (
-                <div className="text-sm text-destructive">{state.message}</div>
-              )}
+            {successMessage && (
+              <div className="text-sm text-emerald-600">{successMessage}</div>
+            )}
 
-              <DialogFooter>
-                <Button
-                  type="submit"
-                  disabled={
-                    state.kind === "submitting" ||
-                    !chatName.trim() ||
-                    !invitedEmail.trim()
-                  }
-                  className="w-full sm:w-auto"
-                >
-                  {state.kind === "submitting" ? "Creating…" : "Create & invite"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </>
-        ) : (
-          <>
-            <DialogHeader>
-              <DialogTitle>Chat created!</DialogTitle>
-              <DialogDescription>
-                &ldquo;{state.chatName}&rdquo; has been created successfully. The invitation will appear in their chat list when they log in.
-              </DialogDescription>
-            </DialogHeader>
+            {state.kind === "error" && (
+              <div className="text-sm text-destructive">{state.message}</div>
+            )}
+
             <DialogFooter>
-              <Button onClick={onClose} className="w-full sm:w-auto">
-                Done
+              <Button
+                type="submit"
+                disabled={
+                  state.kind === "submitting" ||
+                  !chatName.trim() ||
+                  !invitedEmail.trim()
+                }
+                className="w-full sm:w-auto"
+              >
+                {state.kind === "submitting" ? "Creating…" : "Create & invite"}
               </Button>
             </DialogFooter>
-          </>
-        )}
+          </form>
+        </>
       </DialogContent>
     </Dialog>
   );

@@ -5,7 +5,13 @@ import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { LogOut, Moon, Plus, Search, Sun } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { EllipsisVertical, LogOut, Moon, Plus, Search, Sun } from "lucide-react";
 import type { ChatWithRole } from "@/store/chatStore";
 
 interface ChatSidebarProps {
@@ -20,7 +26,7 @@ interface ChatSidebarProps {
   onDecline: (chatId: string) => void;
   onNewChat: () => void;
   onLogout: () => void;
-  onDeleteChat: (chatId: string) => void;
+  onDeleteChat: (chatId: string, mode: "for_me" | "for_everyone") => void;
 }
 
 export default function ChatSidebar({
@@ -120,10 +126,6 @@ export default function ChatSidebar({
               <div
                 key={chat.id}
                 onClick={() => onSelectChat(chat.id)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  onDeleteChat(chat.id);
-                }}
                 className={`w-full text-left px-3 py-3 my-1 rounded-xl flex items-center gap-3 transition cursor-pointer ${
                   isActive
                     ? "bg-foreground text-background"
@@ -157,7 +159,11 @@ export default function ChatSidebar({
                       isActive ? "text-background/70" : "text-muted-foreground"
                     }`}
                   >
-                    {pending ? "Invited" : chat.role}
+                    {pending
+                      ? "Invited"
+                      : chat.role === "declined"
+                        ? "Declined"
+                        : chat.role}
                   </p>
                 </div>
 
@@ -183,6 +189,41 @@ export default function ChatSidebar({
                     >
                       Decline
                     </Button>
+                  </div>
+                )}
+
+                {!pending && (
+                  <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          className={`p-1.5 rounded-md transition-colors ${
+                            isActive
+                              ? "text-background/70 hover:bg-background/15"
+                              : "text-muted-foreground hover:bg-muted"
+                          }`}
+                          aria-label={`Chat actions for ${chat.name}`}
+                        >
+                          <EllipsisVertical className="w-4 h-4" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" side="bottom">
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() => onDeleteChat(chat.id, "for_me")}
+                        >
+                          Delete for me
+                        </DropdownMenuItem>
+                        {chat.role === "admin" && (
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={() => onDeleteChat(chat.id, "for_everyone")}
+                          >
+                            Delete for everyone
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 )}
               </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, type FormEvent } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useChat } from "@/hooks/useChat";
 import { usePresence } from "@/hooks/usePresence";
@@ -9,7 +9,6 @@ import { groupReactions } from "@/store/chatStore";
 import { useScreenShare } from "@/hooks/useScreenShare";
 import { useVoiceCall } from "@/hooks/useVoiceCall";
 import NewChatModal from "@/components/NewChatModal";
-import DeleteChatDialog from "@/components/chat/DeleteChatDialog";
 import ScreenShareViewer from "@/components/ScreenShareViewer";
 import CallModal from "@/components/CallModal";
 import { Button } from "@/components/ui/button";
@@ -71,7 +70,6 @@ export default function ChatPage() {
   const { onlineUsers, typingUsers, startTyping, stopTyping } =
     usePresence(activeChatId);
 
-  const [input, setInput] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joiningChatId, setJoiningChatId] = useState<string | null>(null);
@@ -89,7 +87,6 @@ export default function ChatPage() {
   const [highlightedMessageId, setHighlightedMessageId] = useState<
     string | null
   >(null);
-  const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -97,6 +94,7 @@ export default function ChatPage() {
   const reactionGrouped = groupReactions(reactions);
   const activeChat = chats.find((c) => c.id === activeChatId);
   const isPending = activeChat?.role === "pending";
+  const isDeclined = activeChat?.role === "declined";
 
   /* ── Effects ── */
 
@@ -149,19 +147,15 @@ export default function ChatPage() {
     router.push("/login");
   }
 
-  async function handleSend(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!input.trim()) return;
-    const content = input;
-    setInput("");
+  async function handleSend(content: string) {
     stopTyping();
     await sendMessage(content, replyTo?.id);
     setReplyTo(null);
   }
 
-  function handleInputChange(value: string) {
-    setInput(value);
-    value.trim() ? startTyping() : stopTyping();
+  function handleTypingChange(isTyping: boolean) {
+    if (isTyping) startTyping();
+    else stopTyping();
   }
 
   function handleContextMenu(
@@ -238,6 +232,17 @@ export default function ChatPage() {
     setSidebarOpen(false);
   };
 
+  async function handleDeleteChat(
+    chatId: string,
+    mode: "for_me" | "for_everyone"
+  ) {
+    try {
+      await deleteChat(chatId, mode);
+    } catch {
+      // keep page stable; delete hook throws for consumer handling
+    }
+  }
+
   function handleJumpToMessage(messageId: string) {
     const target = document.querySelector(
       `[data-message-id="${messageId}"]`
@@ -271,7 +276,7 @@ export default function ChatPage() {
           onDecline={handleDecline}
           onNewChat={handleNewChat}
           onLogout={handleLogout}
-          onDeleteChat={setDeletingChatId}
+          onDeleteChat={handleDeleteChat}
         />
       </aside>
 
@@ -291,7 +296,7 @@ export default function ChatPage() {
             onDecline={handleDecline}
             onNewChat={handleNewChat}
             onLogout={handleLogout}
-            onDeleteChat={setDeletingChatId}
+            onDeleteChat={handleDeleteChat}
           />
         </SheetContent>
       </Sheet>
@@ -332,6 +337,12 @@ export default function ChatPage() {
                 onJoin={handleJoin}
                 onDecline={handleDecline}
               />
+            ) : isDeclined ? (
+              <div className="flex-1 flex items-center justify-center px-6">
+                <p className="text-sm text-muted-foreground">
+                  Invitation declined. Closing chat...
+                </p>
+              </div>
             ) : (
               <>
                 {/* Messages */}
@@ -501,10 +512,9 @@ export default function ChatPage() {
 
                 <MessageInput
                   canWrite={canWrite}
-                  input={input}
                   replyTo={replyTo}
-                  onInputChange={handleInputChange}
                   onSend={handleSend}
+                  onTypingChange={handleTypingChange}
                   onJumpToReplyMessage={() =>
                     replyTo && handleJumpToMessage(replyTo.id)
                   }
@@ -526,19 +536,6 @@ export default function ChatPage() {
           setActiveChat(chatId);
         }}
       />
-
-      {(() => {
-        const deletingChat = deletingChatId ? chats.find((c) => c.id === deletingChatId) : null;
-        return (
-          <DeleteChatDialog
-            open={!!deletingChat}
-            chatName={deletingChat?.name ?? ""}
-            isAdmin={deletingChat?.role === "admin"}
-            onClose={() => setDeletingChatId(null)}
-            onDelete={(mode) => deleteChat(deletingChatId!, mode)}
-          />
-        );
-      })()}
 
       <ScreenShareViewer
         isActive={shareStatus === "viewing"}

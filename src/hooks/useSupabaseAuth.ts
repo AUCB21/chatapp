@@ -23,7 +23,6 @@ export function useSupabaseAuth() {
         // internal SupabaseClient listener fires before Realtime is
         // initialized.
         supabase.realtime.setAuth(session.access_token);
-        console.log("[Auth] Realtime token set");
       }
     }
 

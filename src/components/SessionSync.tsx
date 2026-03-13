@@ -18,7 +18,6 @@ export function SessionSync() {
         const { data: { session: existingSession } } = await supabase.auth.getSession();
         
         if (existingSession) {
-          console.log('[SessionSync] Client already has session:', existingSession.user.email);
           return;
         }
         
@@ -26,7 +25,6 @@ export function SessionSync() {
         const res = await fetch('/api/auth/session');
         
         if (!res.ok) {
-          console.log('[SessionSync] No server session available');
           return;
         }
         
@@ -34,7 +32,6 @@ export function SessionSync() {
         
         if (data?.session) {
           await supabase.auth.setSession(data.session);
-          console.log('[SessionSync] ✅ Synced server session to client:', data.session.user.email);
         }
       } catch (error) {
         console.error('[SessionSync] Failed to sync session:', error);

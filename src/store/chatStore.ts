@@ -4,7 +4,7 @@ import type { Chat, Message, MemberRole, Reaction } from "../db/schema";
 
 // --- Types ---
 
-export type ChatRole = MemberRole | "pending";
+export type ChatRole = MemberRole | "pending" | "declined";
 export type ChatWithRole = Chat & { role: ChatRole };
 
 /** Grouped reactions for a message: emoji → { count, users[] } */
