@@ -22,8 +22,9 @@ interface UseChatReturn {
   error: ChatState["error"];
 
   // Actions
-  setActiveChat: (chatId: string) => void;
+  setActiveChat: (chatId: string | null) => void;
   sendMessage: (content: string, parentId?: string) => Promise<void>;
+  retrySend: (failedMessageId: string) => Promise<void>;
   editMessage: (messageId: string, content: string) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
   deleteChat: (chatId: string, mode: "for_me" | "for_everyone") => Promise<void>;
@@ -167,7 +168,7 @@ export function useChat(): UseChatReturn {
           const res = await fetch(`/api/chat/${activeId}/messages`);
 
           if (res.status === 403) {
-            _setActiveChat(null as unknown as string);
+            _setActiveChat(null);
             return;
           }
 
@@ -221,6 +222,11 @@ export function useChat(): UseChatReturn {
               createdAt: new Date(raw.created_at as string),
             };
             appendMessage(activeId, incoming);
+
+            // Mark as read if the message is from another user and tab is visible
+            if (incoming.userId !== userId && document.visibilityState === "visible") {
+              fetch(`/api/chat/${activeId}/messages`, { method: "PUT" }).catch(() => {});
+            }
           }
         )
         // UPDATE: edits, deletes, status changes
@@ -304,6 +310,39 @@ export function useChat(): UseChatReturn {
             });
           }
         )
+        // Broadcast for reaction additions
+        .on(
+          "broadcast",
+          { event: "reaction-added" },
+          (payload) => {
+            const data = payload.payload as {
+              id: string;
+              messageId: string;
+              userId: string;
+              emoji: string;
+              createdAt: string;
+            };
+            // Avoid duplicates — only add if not already in store
+            const existing = useChatStore
+              .getState()
+              .reactions[activeId]?.find((r) => r.id === data.id);
+            if (!existing) {
+              addReactionToStore(activeId, {
+                ...data,
+                createdAt: new Date(data.createdAt),
+              });
+            }
+          }
+        )
+        // Broadcast for reaction removals
+        .on(
+          "broadcast",
+          { event: "reaction-removed" },
+          (payload) => {
+            const data = payload.payload as { reactionId: string; messageId: string };
+            removeReactionFromStore(activeId, data.reactionId);
+          }
+        )
         .subscribe();
 
       channelRef.current = channel;
@@ -311,9 +350,18 @@ export function useChat(): UseChatReturn {
 
     fetchAndSubscribe();
 
+    // Mark messages as read when user returns to the tab
+    function handleVisibility() {
+      if (document.visibilityState === "visible" && activeId) {
+        fetch(`/api/chat/${activeId}/messages`, { method: "PUT" }).catch(() => {});
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+
     return () => {
       channelRef.current?.unsubscribe();
       channelRef.current = null;
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [isReady, activeChatId, activeMembership]);
 
@@ -365,16 +413,42 @@ export function useChat(): UseChatReturn {
           payload: savedMsg,
         });
       } catch {
-        // On failure, remove the optimistic entry.
+        // Mark the optimistic entry as failed instead of removing it.
+        const failedMsg: Message = {
+          ...optimisticMsg,
+          id: optimisticMsg.id.replace("optimistic-", "failed-"),
+        };
         setMessages(
           activeChatId,
           useChatStore
             .getState()
-            .messages[activeChatId].filter((m) => m.id !== optimisticMsg.id)
+            .messages[activeChatId].map((m) =>
+              m.id === optimisticMsg.id ? failedMsg : m
+            )
         );
       }
     },
     [activeChatId, canWrite]
+  );
+
+  // --- Retry a failed message ---
+
+  const retrySend = useCallback(
+    async (failedMessageId: string) => {
+      if (!activeChatId || !canWrite) return;
+
+      const msgs = useChatStore.getState().messages[activeChatId] ?? [];
+      const failedMsg = msgs.find((m) => m.id === failedMessageId);
+      if (!failedMsg) return;
+
+      // Remove the failed message and re-send
+      setMessages(
+        activeChatId,
+        msgs.filter((m) => m.id !== failedMessageId)
+      );
+      await sendMessage(failedMsg.content, failedMsg.parentId ?? undefined);
+    },
+    [activeChatId, canWrite, sendMessage]
   );
 
   // --- Edit a message ---
@@ -465,27 +539,53 @@ export function useChat(): UseChatReturn {
     async (messageId: string, emoji: string) => {
       if (!activeChatId) return;
 
-      try {
-        // Check if user already reacted with this emoji
-        const existing = useChatStore
-          .getState()
-          .reactions[activeChatId]?.find(
-            (r) =>
-              r.messageId === messageId &&
-              r.emoji === emoji &&
-              r.userId === useSessionStore.getState().user?.id
-          );
+      const currentUserId = useSessionStore.getState().user?.id;
+      if (!currentUserId) return;
 
-        if (existing) {
-          // Remove reaction
-          removeReactionFromStore(activeChatId, existing.id);
+      // Check if user already reacted with this emoji
+      const existing = useChatStore
+        .getState()
+        .reactions[activeChatId]?.find(
+          (r) =>
+            r.messageId === messageId &&
+            r.emoji === emoji &&
+            r.userId === currentUserId
+        );
+
+      if (existing) {
+        // Optimistic remove
+        removeReactionFromStore(activeChatId, existing.id);
+
+        try {
           await fetch(`/api/chat/${activeChatId}/messages/reactions`, {
             method: "DELETE",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ messageId, emoji }),
           });
-        } else {
-          // Add reaction
+
+          // Broadcast removal to other clients
+          channelRef.current?.send({
+            type: "broadcast",
+            event: "reaction-removed",
+            payload: { reactionId: existing.id, messageId },
+          });
+        } catch {
+          // Revert — re-add the reaction
+          addReactionToStore(activeChatId, existing);
+        }
+      } else {
+        // Optimistic add with temporary ID
+        const tempId = `optimistic-reaction-${Date.now()}`;
+        const optimisticReaction = {
+          id: tempId,
+          messageId,
+          userId: currentUserId,
+          emoji,
+          createdAt: new Date(),
+        };
+        addReactionToStore(activeChatId, optimisticReaction);
+
+        try {
           const res = await fetch(`/api/chat/${activeChatId}/messages/reactions`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -494,14 +594,29 @@ export function useChat(): UseChatReturn {
 
           if (res.ok) {
             const { data } = await res.json();
-            if (data) addReactionToStore(activeChatId, data);
+            if (data) {
+              // Replace optimistic with real reaction
+              removeReactionFromStore(activeChatId, tempId);
+              addReactionToStore(activeChatId, data);
+
+              // Broadcast addition to other clients
+              channelRef.current?.send({
+                type: "broadcast",
+                event: "reaction-added",
+                payload: data,
+              });
+            }
+          } else {
+            // Revert on failure
+            removeReactionFromStore(activeChatId, tempId);
           }
+        } catch {
+          // Revert on error
+          removeReactionFromStore(activeChatId, tempId);
         }
-      } catch (e) {
-        setError("messages", e instanceof Error ? e.message : "Failed to toggle reaction");
       }
     },
-    [activeChatId, setError]
+    [activeChatId]
   );
 
   // --- Delete a chat ---
@@ -576,7 +691,7 @@ export function useChat(): UseChatReturn {
     };
   }, []);
 
-  const setActiveChat = useCallback((chatId: string) => {
+  const setActiveChat = useCallback((chatId: string | null) => {
     _setActiveChat(chatId);
   }, []);
 
@@ -590,6 +705,7 @@ export function useChat(): UseChatReturn {
     error,
     setActiveChat,
     sendMessage,
+    retrySend,
     editMessage: editMessageFn,
     deleteMessage: deleteMessageFn,
     deleteChat: deleteChatFn,

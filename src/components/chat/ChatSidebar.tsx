@@ -64,10 +64,16 @@ export default function ChatSidebar({
     setMounted(true);
   }, []);
 
+  const pendingChats = useMemo(
+    () => chats.filter((c) => c.role === "pending"),
+    [chats]
+  );
+
   const visibleChats = useMemo(() => {
-    if (!search.trim()) return chats;
+    const nonPending = chats.filter((c) => c.role !== "pending");
+    if (!search.trim()) return nonPending;
     const term = search.trim().toLowerCase();
-    return chats.filter((chat) => chat.name.toLowerCase().includes(term));
+    return nonPending.filter((chat) => chat.name.toLowerCase().includes(term));
   }, [chats, search]);
 
   const displayName = userEmail?.split("@")[0] || "User";
@@ -120,6 +126,54 @@ export default function ChatSidebar({
         </div>
       </div>
 
+      {/* Pending invitations */}
+      {pendingChats.length > 0 && (
+        <div className="px-2 pt-2">
+          <div className="rounded-xl border border-primary/20 bg-primary/5 p-2.5">
+            <div className="flex items-center gap-1.5 px-1 pb-2">
+              <svg className="w-3.5 h-3.5 text-primary" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
+              </svg>
+              <span className="text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-primary/80">
+                Invitations ({pendingChats.length})
+              </span>
+            </div>
+            {pendingChats.map((chat) => {
+              const isJoining = joiningChatId === chat.id;
+              return (
+                <div
+                  key={chat.id}
+                  className="flex items-center gap-2 px-1 py-1.5"
+                >
+                  <Avatar className="w-7 h-7 shrink-0">
+                    <AvatarFallback className={`text-[0.6rem] font-semibold ${getAvatarColor(chat.name)}`}>
+                      {chat.name[0].toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <p className="text-xs font-medium truncate flex-1 min-w-0">{chat.name}</p>
+                  <div className="flex gap-1 shrink-0">
+                    <button
+                      onClick={() => onJoin(chat.id)}
+                      disabled={!!joiningChatId}
+                      className="text-[0.6rem] h-5.5 px-2 rounded-full bg-primary text-primary-foreground font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+                    >
+                      {isJoining ? "…" : "Accept"}
+                    </button>
+                    <button
+                      onClick={() => onDecline(chat.id)}
+                      disabled={!!joiningChatId}
+                      className="text-[0.6rem] h-5.5 px-2 rounded-full bg-sidebar-accent text-foreground font-medium hover:opacity-80 transition-opacity disabled:opacity-50"
+                    >
+                      Decline
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Section label */}
       {visibleChats.length > 0 && (
         <div className="px-4 pt-3 pb-1">
@@ -158,8 +212,6 @@ export default function ChatSidebar({
 
           {visibleChats.map((chat) => {
             const isActive = chat.id === activeChatId;
-            const pending = chat.role === "pending";
-            const isJoining = joiningChatId === chat.id;
             const avatarColor = getAvatarColor(chat.name);
 
             return (
@@ -184,64 +236,43 @@ export default function ChatSidebar({
 
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm font-medium truncate leading-tight ${
-                    isActive ? "text-primary" : pending ? "text-muted-foreground" : ""
+                    isActive ? "text-primary" : ""
                   }`}>
                     {chat.name}
                   </p>
                   <p className="text-[0.65rem] mt-0.5 text-muted-foreground truncate">
-                    {pending ? "Invited" : chat.role === "declined" ? "Declined" : chat.role}
+                    {chat.role === "declined" ? "Declined" : chat.role}
                   </p>
                 </div>
 
-                {pending && (
-                  <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={() => onJoin(chat.id)}
-                      disabled={!!joiningChatId}
-                      className="text-[0.65rem] h-6 px-2.5 rounded-full bg-primary text-primary-foreground font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-                    >
-                      {isJoining ? "…" : "Accept"}
-                    </button>
-                    <button
-                      onClick={() => onDecline(chat.id)}
-                      disabled={!!joiningChatId}
-                      className="text-[0.65rem] h-6 px-2.5 rounded-full bg-sidebar-accent text-foreground font-medium hover:opacity-80 transition-opacity disabled:opacity-50"
-                    >
-                      Decline
-                    </button>
-                  </div>
-                )}
-
-                {!pending && (
-                  <div className="shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:bg-sidebar-accent transition-colors"
-                          aria-label={`Chat actions for ${chat.name}`}
-                        >
-                          <EllipsisVertical className="w-3.5 h-3.5" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" side="bottom">
+                <div className="shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:bg-sidebar-accent transition-colors"
+                        aria-label={`Chat actions for ${chat.name}`}
+                      >
+                        <EllipsisVertical className="w-3.5 h-3.5" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" side="bottom">
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => onDeleteChat(chat.id, "for_me")}
+                      >
+                        Delete for me
+                      </DropdownMenuItem>
+                      {chat.role === "admin" && (
                         <DropdownMenuItem
                           variant="destructive"
-                          onClick={() => onDeleteChat(chat.id, "for_me")}
+                          onClick={() => onDeleteChat(chat.id, "for_everyone")}
                         >
-                          Delete for me
+                          Delete for everyone
                         </DropdownMenuItem>
-                        {chat.role === "admin" && (
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onClick={() => onDeleteChat(chat.id, "for_everyone")}
-                          >
-                            Delete for everyone
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                )}
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               </div>
             );
           })}
@@ -249,7 +280,7 @@ export default function ChatSidebar({
       </div>
 
       {/* Footer */}
-      <div className="shrink-0 px-3 py-3 border-t border-sidebar-border">
+      <div className="shrink-0 px-3 py-4 border-t border-sidebar-border">
         <div className="flex items-center gap-2.5 px-1.5">
           <Avatar className="w-7 h-7 shrink-0">
             <AvatarFallback className="text-[0.6rem] font-semibold bg-primary/15 text-primary">

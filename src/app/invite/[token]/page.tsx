@@ -9,6 +9,7 @@ type InviteState =
   | { kind: "ready"; chatName: string }
   | { kind: "accepting"; chatName: string }
   | { kind: "success"; chatName: string }
+  | { kind: "expired" }
   | { kind: "error"; message: string };
 
 export default function InviteTokenPage({
@@ -32,7 +33,12 @@ export default function InviteTokenPage({
         const res = await fetch(`/api/invite/${resolved.token}`);
         const json = await res.json().catch(() => null);
         if (!res.ok) {
-          setState({ kind: "error", message: json?.error ?? "Invalid invitation" });
+          const msg = json?.error ?? "Invalid invitation";
+          if (res.status === 403 && msg.toLowerCase().includes("expired")) {
+            setState({ kind: "expired" });
+          } else {
+            setState({ kind: "error", message: msg });
+          }
           return;
         }
         setState({ kind: "ready", chatName: json.data.chatName });
@@ -91,6 +97,25 @@ export default function InviteTokenPage({
                 {state.kind === "accepting" ? "Joining..." : "Accept invitation"}
               </Button>
             )}
+          </>
+        )}
+
+        {state.kind === "expired" && (
+          <>
+            <div className="flex justify-center">
+              <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+                <svg className="w-6 h-6 text-muted-foreground" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+              </div>
+            </div>
+            <h1 className="text-lg font-semibold text-center">This link has expired</h1>
+            <p className="text-sm text-muted-foreground text-center">
+              Invitation links are valid for 7 days. Ask the chat admin to send you a new invite.
+            </p>
+            <Button variant="outline" onClick={() => router.push("/")} className="w-full">
+              Back to chats
+            </Button>
           </>
         )}
 

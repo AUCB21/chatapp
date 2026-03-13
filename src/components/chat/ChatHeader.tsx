@@ -27,7 +27,7 @@ interface ChatHeaderProps {
   shareError: string | null;
   onStartSharing: (options: import("@/lib/webrtc").ScreenShareOptions) => Promise<void>;
   onStopSharing: () => void;
-  onOpenSidebar: () => void;
+  onBack: () => void;
 }
 
 function getAvatarColor(name: string) {
@@ -64,25 +64,25 @@ export default function ChatHeader({
   shareError,
   onStartSharing,
   onStopSharing,
-  onOpenSidebar,
+  onBack,
 }: ChatHeaderProps) {
   const avatarColor = getAvatarColor(chat.name);
   const isOnline = onlineUsers.length > 0;
 
   return (
-    <div className="h-15 px-3 md:px-5 border-b border-border flex items-center gap-3 shrink-0 bg-background/95 backdrop-blur-md">
-      {/* Mobile back */}
+    <div className="h-15 px-3 md:px-4 border-b border-border flex items-center gap-2.5 shrink-0 bg-background/95 backdrop-blur-md">
+      {/* Back button — visible on all screen sizes */}
       <button
-        onClick={onOpenSidebar}
-        className="md:hidden shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-muted transition-colors"
-        aria-label="Open sidebar"
+        onClick={onBack}
+        className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-muted transition-colors"
+        aria-label="Back to chats"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
         </svg>
       </button>
 
-      <Avatar className="w-8 h-8 md:w-9 md:h-9 shrink-0">
+      <Avatar className="w-8 h-8 shrink-0">
         <AvatarFallback className={`text-xs font-semibold ${avatarColor}`}>
           {chat.name[0].toUpperCase()}
         </AvatarFallback>
@@ -106,7 +106,7 @@ export default function ChatHeader({
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 shrink-0">
         <VoiceCallControls
           chatId={chat.id}
           canCall={!isPending && canWrite}

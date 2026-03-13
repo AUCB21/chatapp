@@ -85,6 +85,27 @@ export async function POST(req: NextRequest, { params }: Params) {
 }
 
 /**
+ * PUT /api/chat/[chatId]/messages
+ * Marks all messages in the chat as read for the requesting user.
+ */
+export async function PUT(_req: NextRequest, { params }: Params) {
+  const user = await getAuthUser();
+  if (!user) return unauthorized();
+
+  const { chatId } = await params;
+
+  try {
+    const role = await getUserRole(user.id, chatId);
+    if (!role) return forbidden();
+
+    await markRead(chatId, user.id);
+    return ok({ marked: true });
+  } catch (error) {
+    return serverError("Failed to mark as read", error);
+  }
+}
+
+/**
  * PATCH /api/chat/[chatId]/messages
  * Edits a message. Only the author can edit.
  * Body: { messageId: string, content: string }

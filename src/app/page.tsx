@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+
 import { useChat } from "@/hooks/useChat";
 import { usePresence } from "@/hooks/usePresence";
 import { useSessionStore } from "@/store/sessionStore";
@@ -21,6 +21,31 @@ import MessageBubble from "@/components/chat/MessageBubble";
 import MessageInput from "@/components/chat/MessageInput";
 import PendingPrompt from "@/components/chat/PendingPrompt";
 import EmptyChatState from "@/components/chat/EmptyChatState";
+import { useConnectionStatus } from "@/hooks/useConnectionStatus";
+
+function formatDateSeparator(date: Date): string {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diff = today.getTime() - target.getTime();
+  const oneDay = 86_400_000;
+
+  if (diff < oneDay) return "Today";
+  if (diff < oneDay * 2) return "Yesterday";
+  return date.toLocaleDateString(undefined, {
+    month: "long",
+    day: "numeric",
+    ...(date.getFullYear() !== now.getFullYear() && { year: "numeric" }),
+  });
+}
+
+function isDifferentDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() !== b.getFullYear() ||
+    a.getMonth() !== b.getMonth() ||
+    a.getDate() !== b.getDate()
+  );
+}
 
 export default function ChatPage() {
   const router = useRouter();
@@ -37,6 +62,7 @@ export default function ChatPage() {
     error,
     setActiveChat,
     sendMessage,
+    retrySend,
     editMessage,
     deleteMessage,
     deleteChat,
@@ -70,6 +96,7 @@ export default function ChatPage() {
   } = useVoiceCall(activeChatId);
   const { onlineUsers, typingUsers, startTyping, stopTyping } =
     usePresence(activeChatId);
+  const connectionStatus = useConnectionStatus();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
@@ -91,7 +118,6 @@ export default function ChatPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const promptedPendingInvitesRef = useRef<Set<string>>(new Set());
 
   const reactionGrouped = groupReactions(reactions);
   const activeChat = chats.find((c) => c.id === activeChatId);
@@ -224,40 +250,6 @@ export default function ChatPage() {
     }
   }
 
-  useEffect(() => {
-    const pendingChats = chats.filter((chat) => chat.role === "pending");
-    const currentPendingIds = new Set(pendingChats.map((chat) => chat.id));
-
-    for (const chatId of promptedPendingInvitesRef.current) {
-      if (!currentPendingIds.has(chatId)) {
-        promptedPendingInvitesRef.current.delete(chatId);
-      }
-    }
-
-    for (const chat of pendingChats) {
-      if (promptedPendingInvitesRef.current.has(chat.id)) continue;
-
-      promptedPendingInvitesRef.current.add(chat.id);
-
-      toast(`Invitation to ${chat.name}`, {
-        description: "Accept to join now or decline the request.",
-        duration: 12000,
-        action: {
-          label: "Accept",
-          onClick: () => {
-            setActiveChat(chat.id);
-            void handleJoin(chat.id);
-          },
-        },
-        cancel: {
-          label: "Decline",
-          onClick: () => {
-            void handleDecline(chat.id);
-          },
-        },
-      });
-    }
-  }, [chats]);
 
   const handleSelectChat = (chatId: string) => {
     setActiveChat(chatId);
@@ -363,8 +355,20 @@ export default function ChatPage() {
               shareError={shareError}
               onStartSharing={startSharing}
               onStopSharing={stopSharing}
-              onOpenSidebar={() => setSidebarOpen(true)}
+              onBack={() => setActiveChat(null)}
             />
+
+            {connectionStatus !== "connected" && (
+              <div className={`px-3 py-1.5 text-xs font-medium text-center shrink-0 transition-colors ${
+                connectionStatus === "disconnected"
+                  ? "bg-destructive/10 text-destructive border-b border-destructive/20"
+                  : "bg-emerald-500/10 text-emerald-500 border-b border-emerald-500/20"
+              }`}>
+                {connectionStatus === "disconnected"
+                  ? "Connection lost — messages may not be delivered"
+                  : "Back online"}
+              </div>
+            )}
 
             {isPending ? (
               <PendingPrompt
@@ -410,17 +414,34 @@ export default function ChatPage() {
                             null)
                           : null;
 
+                        const msgDate = new Date(msg.createdAt);
+                        const showDateSeparator =
+                          i === 0 ||
+                          isDifferentDay(
+                            msgDate,
+                            new Date(prevMsg.createdAt)
+                          );
+
                         return (
                           <div
                             key={msg.id}
                             data-message-id={msg.id}
                             className="scroll-mt-24"
                           >
+                            {showDateSeparator && (
+                              <div className="flex items-center gap-3 my-3">
+                                <div className="flex-1 h-px bg-border" />
+                                <span className="text-[0.65rem] font-medium text-muted-foreground uppercase tracking-wider">
+                                  {formatDateSeparator(msgDate)}
+                                </span>
+                                <div className="flex-1 h-px bg-border" />
+                              </div>
+                            )}
                             <MessageBubble
                               msg={msg}
                               isOwn={isOwn}
                               isOptimistic={msg.id.startsWith("optimistic-")}
-                              isSameUser={prevMsg?.userId === msg.userId}
+                              isSameUser={!showDateSeparator && prevMsg?.userId === msg.userId}
                               parentMsg={parentMsg}
                               isHighlighted={highlightedMessageId === msg.id}
                               msgReactions={reactionGrouped[msg.id]}
@@ -449,6 +470,11 @@ export default function ChatPage() {
                                 handleReply(msg.id, msg.content)
                               }
                               onJumpToMessage={handleJumpToMessage}
+                              onRetry={
+                                msg.id.startsWith("failed-")
+                                  ? () => retrySend(msg.id)
+                                  : undefined
+                              }
                             />
                           </div>
                         );
@@ -589,7 +615,12 @@ export default function ChatPage() {
         error={callError}
         isIncomingCall={isIncomingCall}
         currentUserEmail={user?.email ?? null}
-        remoteParticipantName={caller?.name ?? null}
+        remoteParticipantName={
+          caller?.name ??
+          onlineUsers.find((u) => u.id !== user?.id)?.email?.split("@")[0] ??
+          activeChat?.name ??
+          null
+        }
         onAnswerCall={answerCall}
         onRejectCall={rejectCall}
         onHangUp={hangUp}

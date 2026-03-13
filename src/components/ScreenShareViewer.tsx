@@ -44,7 +44,7 @@ export default function ScreenShareViewer({ isActive, presenterName, remoteStrea
   if (!isActive) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/95 flex flex-col">
+    <div className="fixed inset-0 z-60 bg-black/95 flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between p-4 bg-black/50 backdrop-blur">
         <div className="flex items-center gap-3">

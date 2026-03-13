@@ -172,6 +172,7 @@ interface MessageBubbleProps {
   onSetPickerOpen: (open: boolean) => void;
   onReply: () => void;
   onJumpToMessage: (messageId: string) => void;
+  onRetry?: () => void;
 }
 
 export default function MessageBubble({
@@ -195,7 +196,9 @@ export default function MessageBubble({
   onSetPickerOpen,
   onReply,
   onJumpToMessage,
+  onRetry,
 }: MessageBubbleProps) {
+  const isFailed = msg.id.startsWith("failed-");
   const isEditing = editContent !== null;
   const isDeleted = !!msg.deletedAt;
   const isEdited = !!msg.editedAt && !isDeleted;
@@ -262,7 +265,7 @@ export default function MessageBubble({
             className={`group/message relative px-4 py-2.5 rounded-2xl text-sm leading-relaxed transition-all ${
               isOwn
                 ? `bg-primary text-primary-foreground rounded-br-sm shadow-sm shadow-primary/20 ${
-                    isOptimistic ? "optimistic-pulse" : ""
+                    isFailed ? "opacity-60" : isOptimistic ? "optimistic-pulse" : ""
                   }`
                 : "bg-card border border-border rounded-bl-sm shadow-sm"
             } ${isDeleted ? "opacity-40 italic" : ""}`}
@@ -272,7 +275,15 @@ export default function MessageBubble({
               {isEdited && (
                 <span className="text-[0.55rem] opacity-50 font-medium uppercase tracking-wider">edited</span>
               )}
-              {isOwn && !isOptimistic && !isDeleted && (
+              {isFailed && (
+                <button
+                  onClick={onRetry}
+                  className="text-[0.6rem] font-medium text-destructive-foreground/80 hover:text-destructive-foreground underline cursor-pointer"
+                >
+                  Failed — tap to retry
+                </button>
+              )}
+              {isOwn && !isOptimistic && !isFailed && !isDeleted && (
                 <span className="text-[0.65rem]">
                   {msg.status === "read" ? (
                     <span className="text-primary-foreground/70">✓✓</span>
@@ -304,20 +315,23 @@ export default function MessageBubble({
               isOwn ? "justify-end" : "justify-start"
             }`}
           >
-            {Object.entries(msgReactions).map(([emoji, data]) => (
-              <button
-                key={emoji}
-                onClick={() => onToggleReaction(emoji)}
-                className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-all ${
-                  data.users.includes(userId)
-                    ? "bg-primary/10 border-primary/25 text-primary"
-                    : "bg-muted/50 border-transparent hover:border-border/60 text-foreground"
-                }`}
-              >
-                <span>{emoji}</span>
-                <span className="text-muted-foreground text-[0.6rem] font-medium">{data.count}</span>
-              </button>
-            ))}
+            {Object.entries(msgReactions).map(([emoji, data]) => {
+              const isMine = data.users.includes(userId);
+              return (
+                <button
+                  key={emoji}
+                  onClick={() => onToggleReaction(emoji)}
+                  className={`animate-reaction-pop inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-all active:scale-125 ${
+                    isMine
+                      ? "bg-primary/10 border-primary/25 text-primary"
+                      : "bg-muted/50 border-transparent hover:border-border/60 text-foreground"
+                  }`}
+                >
+                  <span>{emoji}</span>
+                  <span className="text-muted-foreground text-[0.6rem] font-medium">{data.count}</span>
+                </button>
+              );
+            })}
           </div>
         )}
 

@@ -86,7 +86,7 @@ export default function MessageInput({
 
       <form
         onSubmit={handleSend}
-        className="px-4 md:px-5 py-3 md:py-4 border-t border-border bg-background flex items-end gap-2.5 shrink-0"
+        className="px-4 md:px-5 py-3 border-t border-border bg-background flex items-end gap-2.5 shrink-0"
       >
         <button
           type="button"
@@ -106,7 +106,7 @@ export default function MessageInput({
           onKeyDown={handleComposerKeyDown}
           placeholder={replyTo ? "Write a reply…" : "Type a message…"}
           rows={1}
-          className="flex-1 rounded-2xl min-h-9.5 max-h-36 bg-muted/60 border border-border/60 text-sm px-4 py-2.5 outline-none resize-none focus:ring-1 focus:ring-ring/40 focus:border-border transition-all placeholder:text-muted-foreground/50"
+          className="flex-1 rounded-2xl min-h-9 max-h-36 bg-muted/60 border border-border/60 text-sm px-4 py-2.5 outline-none resize-none focus:ring-1 focus:ring-ring/40 focus:border-border transition-all placeholder:text-muted-foreground/50"
         />
 
         <button

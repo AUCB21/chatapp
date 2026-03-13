@@ -30,7 +30,7 @@ export interface ChatState {
 
   // Actions
   setChats: (chats: ChatWithRole[]) => void;
-  setActiveChat: (chatId: string) => void;
+  setActiveChat: (chatId: string | null) => void;
   setMessages: (chatId: string, messages: Message[]) => void;
   appendMessage: (chatId: string, message: Message) => void;
   updateMessage: (chatId: string, messageId: string, updates: Partial<Message>) => void;

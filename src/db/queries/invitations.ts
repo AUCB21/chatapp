@@ -95,6 +95,7 @@ export async function acceptInvitationByChatAndEmail(
 
     const inv = result[0];
     if (!inv) return { error: "No pending invitation found" };
+    if (inv.expiresAt.getTime() <= Date.now()) return { error: "Invitation has expired" };
 
     await tx
       .insert(memberships)

@@ -47,6 +47,7 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
   const iceCandidateQueue = useRef<RTCIceCandidateInit[]>([]);
   const syncDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const endedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Refs for values accessed inside signal handlers (avoids stale closures)
   const userIdRef = useRef(userId);
@@ -84,6 +85,11 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
     if (endedTimerRef.current) {
       clearTimeout(endedTimerRef.current);
       endedTimerRef.current = null;
+    }
+
+    if (disconnectTimerRef.current) {
+      clearTimeout(disconnectTimerRef.current);
+      disconnectTimerRef.current = null;
     }
 
     setCallStatus("idle");
@@ -219,13 +225,26 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
 
       pc.onconnectionstatechange = () => {
         if (pc.connectionState === "connected") {
+          // Clear any pending disconnect timer — connection recovered
+          if (disconnectTimerRef.current) {
+            clearTimeout(disconnectTimerRef.current);
+            disconnectTimerRef.current = null;
+          }
           setCallStatus("connected");
-        } else if (
-          pc.connectionState === "failed" ||
-          pc.connectionState === "disconnected"
-        ) {
+        } else if (pc.connectionState === "failed") {
           setError("Connection lost");
           cleanupCall();
+        } else if (pc.connectionState === "disconnected") {
+          // "disconnected" is transient — wait before cleaning up
+          if (!disconnectTimerRef.current) {
+            disconnectTimerRef.current = setTimeout(() => {
+              disconnectTimerRef.current = null;
+              if (peerConnectionRef.current?.connectionState === "disconnected") {
+                setError("Connection lost");
+                cleanupCall();
+              }
+            }, 5000);
+          }
         }
       };
     },
