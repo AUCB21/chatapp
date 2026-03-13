@@ -82,6 +82,16 @@
 8) **24** DB role restriction for production security
 9) **9** Me-to-me personal chat
 
+### 30. Login Boot Preload (Chats + First Page)
+After successful login, preload core chat data and only render the main app once initial data is ready.
+
+- Fetch chat list first, then preload the initial active chat messages using `PAGINATION_SIZE` (same first-page size as normal load).
+- Add a boot/loading gate so the chat UI does not mount in a partially empty state.
+- Keep a clear fallback: if preload fails, show retry/error state instead of rendering broken UI.
+- Avoid duplicate fetches between bootstrap preload and existing `useChat` effects (single source of truth for initial load).
+- Ensure unread counts, memberships, and active chat selection are hydrated before first paint.
+- Measure login-to-interactive time to confirm preload improves perceived startup UX.
+
 ### 16. File / Image Sharing
 The `<Paperclip>` button is rendered but does nothing. Implement file/image sharing with a single storage provider and attachment metadata in DB. Blocked by item 11 for production hardening.
 
@@ -113,16 +123,6 @@ After item 16 works in staging, harden the chosen storage provider before produc
 - Cleanup jobs: remove orphaned objects, failed-temp uploads, and (if chosen) files from deleted messages.
 - Auditability: log upload/read/delete events with userId/chatId/storageKey for incident response.
 - Release gate: keep item 16 behind a flag until hardening checks are validated in staging.
-
-### 30. Login Boot Preload (Chats + First Page)
-After successful login, preload core chat data and only render the main app once initial data is ready.
-
-- Fetch chat list first, then preload the initial active chat messages using `PAGINATION_SIZE` (same first-page size as normal load).
-- Add a boot/loading gate so the chat UI does not mount in a partially empty state.
-- Keep a clear fallback: if preload fails, show retry/error state instead of rendering broken UI.
-- Avoid duplicate fetches between bootstrap preload and existing `useChat` effects (single source of truth for initial load).
-- Ensure unread counts, memberships, and active chat selection are hydrated before first paint.
-- Measure login-to-interactive time to confirm preload improves perceived startup UX.
 
 ---
 
