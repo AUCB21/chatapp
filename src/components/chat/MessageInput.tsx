@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Paperclip, Send } from "lucide-react";
@@ -35,6 +35,17 @@ export default function MessageInput({
     setInput("");
     onTypingChange(false);
     await onSend(content);
+  }
+
+  function handleComposerKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key !== "Enter") return;
+    if (e.shiftKey) return;
+    if (e.nativeEvent.isComposing) return;
+
+    e.preventDefault();
+    if (!input.trim()) return;
+    const form = e.currentTarget.form;
+    form?.requestSubmit();
   }
 
   if (!canWrite) {
@@ -90,16 +101,17 @@ export default function MessageInput({
           <Paperclip className="w-5 h-5" />
         </Button>
 
-        <Input
-          type="text"
+        <textarea
           value={input}
           onChange={(e) => {
             const value = e.target.value;
             setInput(value);
             onTypingChange(value.trim().length > 0);
           }}
+          onKeyDown={handleComposerKeyDown}
           placeholder={replyTo ? "Reply…" : "Type a message…"}
-          className="flex-1 rounded-2xl h-11 bg-muted border-0 text-sm"
+          rows={1}
+          className="flex-1 rounded-2xl min-h-11 max-h-36 bg-muted border-0 text-sm px-4 py-3 outline-none resize-none"
         />
         <Button
           type="submit"

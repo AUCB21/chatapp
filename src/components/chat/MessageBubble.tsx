@@ -1,11 +1,153 @@
 "use client";
 
+import { Fragment, useMemo, type ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { Message } from "@/db/schema";
 import type { ReactionGroup } from "@/store/chatStore";
 
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🎉"];
+const FENCED_CODE_REGEX = /```([\w+-]*)\n?([\s\S]*?)```/g;
+const INLINE_CODE_REGEX = /`([^`]+)`/g;
+const MARKDOWN_LINK_REGEX = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+const RAW_URL_REGEX = /(https?:\/\/[^\s<]+[^\s<.,:;"')\]\}])/g;
+
+type MessageSegment =
+  | { type: "text"; value: string }
+  | { type: "code"; value: string; language?: string };
+
+function splitMarkdownMessage(content: string): MessageSegment[] {
+  const segments: MessageSegment[] = [];
+  let lastIndex = 0;
+
+  for (const match of content.matchAll(FENCED_CODE_REGEX)) {
+    const index = match.index ?? 0;
+    if (index > lastIndex) {
+      segments.push({ type: "text", value: content.slice(lastIndex, index) });
+    }
+
+    segments.push({
+      type: "code",
+      language: match[1] || undefined,
+      value: match[2].replace(/\n$/, ""),
+    });
+
+    lastIndex = index + match[0].length;
+  }
+
+  if (lastIndex < content.length) {
+    segments.push({ type: "text", value: content.slice(lastIndex) });
+  }
+
+  return segments;
+}
+
+function renderLink(href: string, label: string, key: string, className: string) {
+  return (
+    <a
+      key={key}
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className={className}
+    >
+      {label}
+    </a>
+  );
+}
+
+function renderLinks(text: string, keyPrefix: string, linkClassName: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(MARKDOWN_LINK_REGEX)) {
+    const index = match.index ?? 0;
+    if (index > lastIndex) {
+      const plainText = text.slice(lastIndex, index);
+      nodes.push(...renderRawUrls(plainText, `${keyPrefix}-plain-${index}`, linkClassName));
+    }
+
+    nodes.push(
+      renderLink(
+        match[2],
+        match[1],
+        `${keyPrefix}-md-link-${index}`,
+        linkClassName
+      )
+    );
+    lastIndex = index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(...renderRawUrls(text.slice(lastIndex), `${keyPrefix}-tail`, linkClassName));
+  }
+
+  return nodes;
+}
+
+function renderRawUrls(text: string, keyPrefix: string, linkClassName: string): ReactNode[] {
+  return text.split(RAW_URL_REGEX).map((part, index) => {
+    if (!part) return null;
+
+    if (part.match(RAW_URL_REGEX)) {
+      return renderLink(part, part, `${keyPrefix}-raw-link-${index}`, linkClassName);
+    }
+
+    return <Fragment key={`${keyPrefix}-text-${index}`}>{part}</Fragment>;
+  });
+}
+
+function renderMarkdownText(text: string, keyPrefix: string, isOwn: boolean): ReactNode[] {
+  const linkClassName = isOwn
+    ? "underline underline-offset-2 break-all text-background/90 hover:text-background"
+    : "underline underline-offset-2 break-all text-foreground hover:text-primary";
+
+  return text.split(INLINE_CODE_REGEX).map((part, index) => {
+    const key = `${keyPrefix}-inline-${index}`;
+
+    if (index % 2 === 1) {
+      return (
+        <code
+          key={key}
+          className={`rounded px-1.5 py-0.5 font-mono text-[0.8125rem] ${
+            isOwn ? "bg-background/15 text-background" : "bg-background text-foreground"
+          }`}
+        >
+          {part}
+        </code>
+      );
+    }
+
+    return <Fragment key={key}>{renderLinks(part, key, linkClassName)}</Fragment>;
+  });
+}
+
+function renderMarkdownMessage(content: string, isOwn: boolean) {
+  return splitMarkdownMessage(content).map((segment, index) => {
+    if (segment.type === "code") {
+      return (
+        <div key={`code-${index}`} className="my-2 overflow-hidden rounded-xl border border-border/60">
+          {segment.language && (
+            <div className="border-b border-border/60 bg-background/70 px-3 py-1.5 font-mono text-[0.625rem] uppercase tracking-widest text-muted-foreground">
+              {segment.language}
+            </div>
+          )}
+          <pre className={`overflow-x-auto px-3 py-2.5 text-[0.8125rem] ${
+            isOwn ? "bg-background/10 text-background" : "bg-background/80 text-foreground"
+          }`}>
+            <code className="font-mono whitespace-pre">{segment.value}</code>
+          </pre>
+        </div>
+      );
+    }
+
+    return (
+      <span key={`text-${index}`} className="whitespace-pre-wrap wrap-break-word">
+        {renderMarkdownText(segment.value, `segment-${index}`, isOwn)}
+      </span>
+    );
+  });
+}
 
 interface MessageBubbleProps {
   msg: Message;
@@ -57,6 +199,10 @@ export default function MessageBubble({
   const isEditing = editContent !== null;
   const isDeleted = !!msg.deletedAt;
   const isEdited = !!msg.editedAt && !isDeleted;
+  const renderedContent = useMemo(
+    () => renderMarkdownMessage(msg.content, isOwn),
+    [msg.content, isOwn]
+  );
 
   function handleDoubleClick() {
     if (!canWrite || isDeleted || isEditing) return;
@@ -119,7 +265,7 @@ export default function MessageBubble({
                 : "bg-muted border border-border rounded-bl-sm"
             } ${isDeleted ? "opacity-50 italic" : ""}`}
           >
-            <p className="whitespace-pre-wrap wrap-break-word">{msg.content}</p>
+            <div className="space-y-1">{renderedContent}</div>
             <div className="flex items-center gap-1.5 mt-1 justify-end">
               {isEdited && (
                 <span className="text-[0.625rem] opacity-50">edited</span>
