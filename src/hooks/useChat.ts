@@ -38,6 +38,30 @@ interface UseChatReturn {
   declineChat: (chatId: string) => Promise<void>;
 }
 
+type MessagePayload = Omit<Message, "createdAt" | "editedAt" | "deletedAt"> & {
+  createdAt: string | Date;
+  editedAt: string | Date | null;
+  deletedAt: string | Date | null;
+};
+
+function normalizeMessage(message: MessagePayload): Message {
+  const normalizeNullableDate = (value: string | Date | null): Date | null => {
+    if (!value) return null;
+    return value instanceof Date ? value : new Date(value);
+  };
+
+  return {
+    ...message,
+    createdAt: message.createdAt instanceof Date ? message.createdAt : new Date(message.createdAt),
+    editedAt: normalizeNullableDate(message.editedAt),
+    deletedAt: normalizeNullableDate(message.deletedAt),
+  };
+}
+
+function normalizeMessages(messages: MessagePayload[]) {
+  return messages.map(normalizeMessage);
+}
+
 function getDeletedForMeStorageKey(userId: string) {
   return `deleted-for-me-${userId}`;
 }
@@ -431,11 +455,17 @@ export function useChat(): UseChatReturn {
           const { data } = await res.json();
           const deletedForMe = new Set(readPendingDeletedMessages(userId));
           if (data.messages) {
-            setMessages(activeId, data.messages.filter((m: { id: string }) => !deletedForMe.has(m.id)));
+            setMessages(
+              activeId,
+              normalizeMessages(data.messages).filter((m) => !deletedForMe.has(m.id))
+            );
             setReactions(activeId, data.reactions ?? []);
             setHasMore(activeId, data.hasMore ?? false);
           } else {
-            setMessages(activeId, (data as Message[]).filter((m) => !deletedForMe.has(m.id)));
+            setMessages(
+              activeId,
+              normalizeMessages(data as MessagePayload[]).filter((m) => !deletedForMe.has(m.id))
+            );
             setHasMore(activeId, false);
           }
         } catch (e) {
@@ -652,6 +682,7 @@ export function useChat(): UseChatReturn {
         if (!res.ok) throw new Error("Failed to send message");
 
         const { data: savedMsg } = await res.json();
+        const normalizedSavedMsg = normalizeMessage(savedMsg as MessagePayload);
 
         // Replace optimistic entry with the real saved message.
         setMessages(
@@ -659,7 +690,7 @@ export function useChat(): UseChatReturn {
           useChatStore
             .getState()
             .messages[activeChatId].map((m) =>
-              m.id === optimisticMsg.id ? savedMsg : m
+              m.id === optimisticMsg.id ? normalizedSavedMsg : m
             )
         );
 
@@ -667,7 +698,7 @@ export function useChat(): UseChatReturn {
         channelRef.current?.send({
           type: "broadcast",
           event: "new-message",
-          payload: savedMsg,
+          payload: normalizedSavedMsg,
         });
       } catch {
         // Mark the optimistic entry as failed instead of removing it.
@@ -906,14 +937,20 @@ export function useChat(): UseChatReturn {
     const oldest = msgs[0];
     setIsLoadingMore(true);
     try {
+      const before = new Date(oldest.createdAt);
+      if (Number.isNaN(before.getTime())) return;
+
       const res = await fetch(
-        `/api/chat/${activeChatId}/messages?before=${encodeURIComponent(oldest.createdAt.toISOString())}`
+        `/api/chat/${activeChatId}/messages?before=${encodeURIComponent(before.toISOString())}`
       );
       if (!res.ok) return;
       const { data } = await res.json();
       if (data.messages?.length > 0) {
         const deletedForMe = new Set(readPendingDeletedMessages(userId));
-        prependMessages(activeChatId, data.messages.filter((m: { id: string }) => !deletedForMe.has(m.id)));
+        prependMessages(
+          activeChatId,
+          normalizeMessages(data.messages).filter((m) => !deletedForMe.has(m.id))
+        );
       }
       setHasMore(activeChatId, data.hasMore ?? false);
     } catch {
@@ -921,7 +958,7 @@ export function useChat(): UseChatReturn {
     } finally {
       setIsLoadingMore(false);
     }
-  }, [activeChatId, isLoadingMore, prependMessages, setHasMore]);
+  }, [activeChatId, isLoadingMore, prependMessages, setHasMore, userId]);
 
   // --- Delete a chat ---
 
