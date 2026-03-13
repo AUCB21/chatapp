@@ -17,6 +17,7 @@ export interface ChatState {
   messages: Record<string, Message[]>; // keyed by chatId
   memberships: Record<string, ChatRole>; // chatId → user's role (incl. "pending")
   reactions: Record<string, Reaction[]>; // keyed by chatId
+  unreadCounts: Record<string, number>; // chatId → unread message count
 
   // Loading / error per-resource
   loading: {
@@ -39,6 +40,8 @@ export interface ChatState {
   removeReaction: (chatId: string, reactionId: string) => void;
   setMembership: (chatId: string, role: ChatRole) => void;
   removeMembership: (chatId: string) => void;
+  incrementUnread: (chatId: string) => void;
+  clearUnread: (chatId: string) => void;
   setLoading: (key: keyof ChatState["loading"], value: boolean) => void;
   setError: (key: keyof ChatState["error"], value: string | null) => void;
   reset: () => void;
@@ -52,6 +55,7 @@ const initialState = {
   messages: {},
   memberships: {},
   reactions: {},
+  unreadCounts: {},
   loading: { chats: false, messages: false },
   error: { chats: null, messages: null },
 };
@@ -78,7 +82,15 @@ export const useChatStore = create<ChatState>()(
         ),
 
       setActiveChat: (chatId) =>
-        set({ activeChatId: chatId }, false, "setActiveChat"),
+        set(
+          (state) => {
+            if (!chatId) return { activeChatId: null };
+            const { [chatId]: _, ...restUnread } = state.unreadCounts;
+            return { activeChatId: chatId, unreadCounts: restUnread };
+          },
+          false,
+          "setActiveChat"
+        ),
 
       setMessages: (chatId, messages) =>
         set(
@@ -187,6 +199,29 @@ export const useChatStore = create<ChatState>()(
           },
           false,
           "removeMembership"
+        ),
+
+      incrementUnread: (chatId) =>
+        set(
+          (state) => ({
+            unreadCounts: {
+              ...state.unreadCounts,
+              [chatId]: (state.unreadCounts[chatId] ?? 0) + 1,
+            },
+          }),
+          false,
+          "incrementUnread"
+        ),
+
+      clearUnread: (chatId) =>
+        set(
+          (state) => {
+            if (!state.unreadCounts[chatId]) return state;
+            const { [chatId]: _, ...rest } = state.unreadCounts;
+            return { unreadCounts: rest };
+          },
+          false,
+          "clearUnread"
         ),
 
       setLoading: (key, value) =>

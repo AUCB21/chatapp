@@ -39,6 +39,9 @@ When a call goes unanswered or is declined, insert a system-style message into t
 ### 11. Per-User Supabase Storage Hardening — PENDING TEST
 After attachment support ships, harden Supabase Storage for per-user isolation: bucket policy review, path conventions, quotas/limits, and cleanup lifecycle.
 
+### 20. User Details / Chat Field Height Alignment — PENDING TEST
+Fix misalignment between the **User details area** and the **chat text field** heights so both rows align consistently across desktop and mobile breakpoints.
+
 ---
 
 ## 🔴 High Priority — Users will hit these immediately
@@ -63,3 +66,12 @@ Add per-message deletion options using the same dual logic pattern: **delete for
 
 ### 18. Push Notifications — PENDING TEST
 No browser notification fires when the tab is unfocused. Users will miss messages. Implement the Web Notifications API (request permission on login) and trigger on incoming Realtime message events.
+
+### 19. Notification Icon Reliability / Speed — PENDING TEST
+Notification icon behavior is not working consistently (or feels too slow). Review event timing and update path so icon state reacts immediately to new events.
+
+### 21. Logout Icon Color (Reddish) — PENDING TEST
+Change the logout icon color to a reddish tone to better signal a destructive/exit action while preserving contrast and accessibility.
+
+### 22. Call Button Font Consistency — PENDING TEST
+Update the "Call" button text to use the same project font styling as the rest of the UI for visual consistency.

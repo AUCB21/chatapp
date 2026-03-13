@@ -8,6 +8,7 @@ import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import { useSessionStore } from "@/store/sessionStore";
 import type { Message, Reaction } from "@/db/schema";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { playPing } from "@/lib/sounds";
 
 // --- Types ---
 
