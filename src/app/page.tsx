@@ -11,6 +11,7 @@ import { useVoiceCall } from "@/hooks/useVoiceCall";
 import NewChatModal from "@/components/NewChatModal";
 import DeleteChatDialog from "@/components/chat/DeleteChatDialog";
 import ScreenShareViewer from "@/components/ScreenShareViewer";
+import CallModal from "@/components/CallModal";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -544,6 +545,24 @@ export default function ChatPage() {
         presenterName={presenter?.name || null}
         remoteStream={remoteStream}
         onClose={rejectShare}
+      />
+
+      <CallModal
+        chatName={activeChat?.name ?? ""}
+        callStatus={callStatus}
+        isMuted={isMuted}
+        caller={caller}
+        error={callError}
+        isIncomingCall={isIncomingCall}
+        currentUserEmail={user?.email ?? null}
+        remoteParticipantName={caller?.name ?? null}
+        onAnswerCall={answerCall}
+        onRejectCall={rejectCall}
+        onHangUp={hangUp}
+        onToggleMute={toggleMute}
+        shareStatus={shareStatus}
+        onStartSharing={startSharing}
+        onStopSharing={stopSharing}
       />
     </div>
   );

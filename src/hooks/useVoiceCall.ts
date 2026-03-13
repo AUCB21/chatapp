@@ -100,9 +100,17 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
   const syncCallSession = useCallback(async () => {
     if (!chatId || !userId) return;
 
+    // Never let DB sync downgrade a WebRTC-established connection
+    const current = callStatusRef.current;
+    if (current === "connected" || current === "ended") return;
+
     try {
       const res = await fetch(`/api/chat/${chatId}/call`);
       if (!res.ok) return;
+
+      // Re-check after await — status may have changed during the fetch
+      const postFetchStatus = callStatusRef.current;
+      if (postFetchStatus === "connected" || postFetchStatus === "ended") return;
 
       const json = await res.json();
       const activeCall = json?.data?.activeCall ?? null;
@@ -130,10 +138,13 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
       );
 
       if (activeCall.status === "ringing") {
+        // Don't overwrite "calling" when WebRTC signaling is already in progress
         if (activeCall.createdByUserId === userId) {
-          setCallStatus("calling");
-          setIsIncomingCall(false);
-          setCaller(null);
+          if (!peerConnectionRef.current) {
+            setCallStatus("calling");
+            setIsIncomingCall(false);
+            setCaller(null);
+          }
         } else if (!meJoined) {
           setIsIncomingCall(true);
           setCaller({ id: activeCall.createdByUserId, name: "Incoming call" });
