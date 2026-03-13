@@ -177,3 +177,13 @@ The reaction overlay can overlap the message content and conflict with jump-to-m
 - Position the reaction overlay beside the target message bubble (left/right depending on ownership), not on top of message text.
 - Ensure jump-to-message keeps the highlighted bubble fully visible and unobstructed.
 - Keep overlay placement responsive on mobile and desktop, with no clipping at viewport edges.
+
+### 32. Password Strength Validator
+Enforce strong passwords on registration and password change flows.
+
+- Minimum 10 characters
+- At least one uppercase letter
+- At least one lowercase letter
+- At least one special character
+- Show real-time validation feedback in the register form
+- Apply same rules on reset-password page

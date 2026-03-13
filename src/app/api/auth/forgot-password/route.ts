@@ -20,8 +20,13 @@ export async function POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
 
   try {
+    const siteUrl =
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(".supabase.co", "") || // fallback
+      req.nextUrl.origin;
+
     await supabase.auth.resetPasswordForEmail(parsed.data.email, {
-      redirectTo: `${req.nextUrl.origin}/reset-password`,
+      redirectTo: `${siteUrl}/reset-password`,
     });
 
     // Always return success to prevent email enumeration

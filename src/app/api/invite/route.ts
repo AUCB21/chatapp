@@ -38,7 +38,9 @@ export async function POST(req: NextRequest) {
 
     // For direct email invitations, send a signup email if the user doesn't exist yet
     if (normalizedEmail) {
-      sendInviteEmailIfNeeded(normalizedEmail, req.nextUrl.origin).catch(
+      const siteUrl =
+        process.env.NEXT_PUBLIC_SITE_URL || req.nextUrl.origin;
+      sendInviteEmailIfNeeded(normalizedEmail, siteUrl).catch(
         (err) => console.warn("[invite] email send failed (non-blocking):", err)
       );
     }
@@ -68,7 +70,7 @@ async function sendInviteEmailIfNeeded(email: string, origin: string) {
   if (!admin) return; // no service role key configured
 
   const { error } = await admin.auth.admin.inviteUserByEmail(email, {
-    redirectTo: `${origin}/login`,
+    redirectTo: `${origin}/reset-password`,
   });
 
   if (error) {
