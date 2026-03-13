@@ -61,6 +61,12 @@
 ### ~~23. Global Incoming Call Modal~~ DONE
 ~~CallModal only showed when inside the relevant chat.~~ Global `call_sessions` postgres_changes listener detects ringing calls in any member chat; `useVoiceCall` receives the correct chatId regardless of which chat is open.
 
+### ~~26. Invite Link Single-Use Enforcement~~ DONE
+~~An accepted invite token is not invalidated server-side after use.~~ Invite validation and accept flows now reject tokens whose status is not `pending`.
+
+### ~~25. Delete-for-Me Server-Side Persistence~~ DONE
+~~"Delete for me" was stored only in `localStorage` per browser.~~ Hidden messages are now persisted server-side with a silent localStorage migration fallback for older clients.
+
 ---
 
 ## 🔴 High Priority — Users will hit these immediately
@@ -87,9 +93,3 @@ After file sharing ships, harden Supabase Storage: bucket policy review, per-use
 
 ### 24. Restrict DB Role for Production
 `DATABASE_URL` currently connects as the DB owner (bypasses RLS). Create a dedicated `app_server` role with `GRANT SELECT, INSERT, UPDATE, DELETE` only — no `SUPERUSER` or `BYPASSRLS`. Reduces blast radius if the connection string leaks. See security analysis in chat history.
-
-### 25. Delete-for-Me Server-Side Persistence
-"Delete for me" is currently stored in `localStorage` per user per browser. If the user clears storage or switches devices, the message reappears. Proper fix: a `deleted_for_me` junction table (`user_id`, `message_id`) filtered at query time in `getMessages`.
-
-### 26. Invite Link Single-Use Enforcement
-An accepted invite token is not invalidated server-side after use — the status is updated but the token remains valid. Add a check that rejects tokens with `status != 'pending'` on the accept endpoint.

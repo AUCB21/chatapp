@@ -1,8 +1,23 @@
-import { and, eq, asc, desc, lt, isNull, sql } from "drizzle-orm";
+import { and, eq, asc, desc, inArray, lt, isNull, sql } from "drizzle-orm";
 import { db } from "../index";
-import { messages, memberships, readReceipts, reactions } from "../schema";
+import {
+  deletedForMe,
+  messages,
+  memberships,
+  readReceipts,
+  reactions,
+} from "../schema";
 
 const DEFAULT_PAGE_SIZE = 50;
+
+function notHiddenForUser(userId: string) {
+  return sql`not exists (
+    select 1
+    from deleted_for_me
+    where ${deletedForMe.userId} = ${userId}
+      and ${deletedForMe.messageId} = ${messages.id}
+  )`;
+}
 
 /**
  * Fetches messages for a chat with optional cursor-based pagination.
@@ -23,15 +38,15 @@ export async function getMessages(
   if (!membership[0]) return [];
 
   const limit = options?.limit ?? DEFAULT_PAGE_SIZE;
+  const baseWhere = and(eq(messages.chatId, chatId), notHiddenForUser(userId));
+  const whereClause = options?.before
+    ? and(baseWhere, lt(messages.createdAt, options.before))
+    : baseWhere;
 
   const rows = await db
     .select()
     .from(messages)
-    .where(
-      options?.before
-        ? and(eq(messages.chatId, chatId), lt(messages.createdAt, options.before))
-        : eq(messages.chatId, chatId)
-    )
+    .where(whereClause)
     .orderBy(desc(messages.createdAt))
     .limit(limit);
 
@@ -84,6 +99,64 @@ export async function deleteMessage(userId: string, messageId: string) {
     .returning();
 
   return deleted ?? null;
+}
+
+/**
+ * Hides a message for a single user while keeping it visible for others.
+ */
+export async function hideMessageForUser(
+  userId: string,
+  chatId: string,
+  messageId: string
+) {
+  const candidate = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .innerJoin(
+      memberships,
+      and(eq(memberships.chatId, messages.chatId), eq(memberships.userId, userId))
+    )
+    .where(and(eq(messages.id, messageId), eq(messages.chatId, chatId)))
+    .limit(1);
+
+  if (!candidate[0]) return false;
+
+  await db
+    .insert(deletedForMe)
+    .values({ userId, messageId })
+    .onConflictDoNothing();
+
+  return true;
+}
+
+/**
+ * Persists locally hidden message IDs from previous app versions.
+ */
+export async function syncDeletedMessagesForUser(
+  userId: string,
+  messageIds: string[]
+) {
+  const uniqueIds = [...new Set(messageIds)];
+  if (uniqueIds.length === 0) return [];
+
+  const accessible = await db
+    .select({ messageId: messages.id })
+    .from(messages)
+    .innerJoin(
+      memberships,
+      and(eq(memberships.chatId, messages.chatId), eq(memberships.userId, userId))
+    )
+    .where(inArray(messages.id, uniqueIds));
+
+  const accessibleIds = [...new Set(accessible.map((row) => row.messageId))];
+  if (accessibleIds.length === 0) return [];
+
+  await db
+    .insert(deletedForMe)
+    .values(accessibleIds.map((messageId) => ({ userId, messageId })))
+    .onConflictDoNothing();
+
+  return accessibleIds;
 }
 
 /**
@@ -237,6 +310,7 @@ export async function searchMessages(userId: string, chatId: string, query: stri
       and(
         eq(messages.chatId, chatId),
         isNull(messages.deletedAt),
+        notHiddenForUser(userId),
         sql`${messages.content} ilike ${"%" + query + "%"}`
       )
     )

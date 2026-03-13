@@ -18,6 +18,15 @@ export const editMessageSchema = z.object({
   content: z.string().min(1).max(4000).trim(),
 });
 
+export const deleteMessageSchema = z.object({
+  messageId: z.string().uuid(),
+  mode: z.enum(["for_me", "for_everyone"]).optional(),
+});
+
+export const syncDeletedMessagesSchema = z.object({
+  messageIds: z.array(z.string().uuid()).max(2000),
+});
+
 export const reactionSchema = z.object({
   emoji: z.string().min(1).max(8), // single emoji
 });

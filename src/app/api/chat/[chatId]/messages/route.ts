@@ -7,10 +7,15 @@ import {
   createMessage,
   editMessage,
   deleteMessage,
+  hideMessageForUser,
   markRead,
   getReactionsForChat,
 } from "@/db/queries/messages";
-import { sendMessageSchema, editMessageSchema } from "@/lib/validation";
+import {
+  sendMessageSchema,
+  editMessageSchema,
+  deleteMessageSchema,
+} from "@/lib/validation";
 import {
   ok,
   created,
@@ -157,8 +162,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
 /**
  * DELETE /api/chat/[chatId]/messages
- * Soft-deletes a message for everyone. Only the author can delete.
- * Body: { messageId: string }
+ * Deletes a message for the requester or for everyone.
+ * Body: { messageId: string, mode?: "for_me" | "for_everyone" }
  */
 export async function DELETE(req: NextRequest, { params }: Params) {
   const user = await getAuthUser();
@@ -171,9 +176,19 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     if (!role) return forbidden();
 
     const body = await req.json().catch(() => null);
-    if (!body?.messageId) return badRequest("messageId is required");
+    const parsed = deleteMessageSchema.safeParse(body);
+    if (!parsed.success) return badRequest(parsed.error.issues[0].message);
 
-    const deleted = await deleteMessage(user.id, body.messageId);
+    const mode = parsed.data.mode ?? "for_everyone";
+
+    if (mode === "for_me") {
+      const hidden = await hideMessageForUser(user.id, chatId, parsed.data.messageId);
+      if (!hidden) return notFound("Message not found in this chat");
+
+      return ok({ messageId: parsed.data.messageId, mode });
+    }
+
+    const deleted = await deleteMessage(user.id, parsed.data.messageId);
     if (!deleted) return notFound("Message not found or not yours");
 
     return ok(deleted);

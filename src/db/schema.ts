@@ -134,6 +134,26 @@ export const reactions = pgTable(
 );
 
 /**
+ * deleted_for_me: per-user hidden messages that should not be returned
+ * in normal message queries for that user.
+ */
+export const deletedForMe = pgTable(
+  "deleted_for_me",
+  {
+    userId: uuid("user_id").notNull(),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.messageId] }),
+    userIdx: index("deleted_for_me_user_idx").on(t.userId),
+    messageIdx: index("deleted_for_me_message_idx").on(t.messageId),
+  })
+);
+
+/**
  * call_sessions: a single call lifecycle scoped to a chat.
  */
 export const callSessions = pgTable(
@@ -208,6 +228,7 @@ export type Message = typeof messages.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
 export type ReadReceipt = typeof readReceipts.$inferSelect;
 export type Reaction = typeof reactions.$inferSelect;
+export type DeletedForMe = typeof deletedForMe.$inferSelect;
 export type CallSession = typeof callSessions.$inferSelect;
 export type CallParticipant = typeof callParticipants.$inferSelect;
 export type MemberRole = (typeof memberRoleEnum.enumValues)[number];

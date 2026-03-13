@@ -38,6 +38,54 @@ interface UseChatReturn {
   declineChat: (chatId: string) => Promise<void>;
 }
 
+function getDeletedForMeStorageKey(userId: string) {
+  return `deleted-for-me-${userId}`;
+}
+
+function readPendingDeletedMessages(userId: string | null) {
+  if (!userId) return [] as string[];
+
+  try {
+    const stored = localStorage.getItem(getDeletedForMeStorageKey(userId));
+    if (!stored) return [];
+    const parsed = JSON.parse(stored);
+    return Array.isArray(parsed)
+      ? [...new Set(parsed.filter((value): value is string => typeof value === "string"))]
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePendingDeletedMessages(userId: string | null, messageIds: string[]) {
+  if (!userId) return;
+
+  try {
+    if (messageIds.length === 0) {
+      localStorage.removeItem(getDeletedForMeStorageKey(userId));
+      return;
+    }
+
+    localStorage.setItem(
+      getDeletedForMeStorageKey(userId),
+      JSON.stringify([...new Set(messageIds)])
+    );
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function addPendingDeletedMessage(userId: string | null, messageId: string) {
+  const ids = readPendingDeletedMessages(userId);
+  if (ids.includes(messageId)) return;
+  writePendingDeletedMessages(userId, [...ids, messageId]);
+}
+
+function removePendingDeletedMessage(userId: string | null, messageId: string) {
+  const ids = readPendingDeletedMessages(userId).filter((id) => id !== messageId);
+  writePendingDeletedMessages(userId, ids);
+}
+
 // --- Hook ---
 
 export function useChat(): UseChatReturn {
@@ -116,6 +164,37 @@ export function useChat(): UseChatReturn {
   useEffect(() => {
     if (!isReady || !userId) return;
     refreshChats();
+  }, [isReady, userId]);
+
+  useEffect(() => {
+    if (!isReady || !userId) return;
+
+    const pendingIds = readPendingDeletedMessages(userId);
+    if (pendingIds.length === 0) return;
+
+    let cancelled = false;
+
+    async function syncPendingDeletedMessages() {
+      try {
+        const res = await fetch("/api/chat/deleted-for-me", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messageIds: pendingIds }),
+        });
+
+        if (!res.ok || cancelled) return;
+
+        writePendingDeletedMessages(userId, []);
+      } catch {
+        // Keep local fallback and retry on a later session.
+      }
+    }
+
+    syncPendingDeletedMessages();
+
+    return () => {
+      cancelled = true;
+    };
   }, [isReady, userId]);
 
   // --- Global background listener: badges + notifications + ping ---
@@ -283,6 +362,27 @@ export function useChat(): UseChatReturn {
       .on(
         "postgres_changes",
         {
+          event: "INSERT",
+          schema: "public",
+          table: "deleted_for_me",
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>;
+          const messageId = row.message_id as string;
+          const state = useChatStore.getState();
+
+          for (const [chatId, chatMessages] of Object.entries(state.messages)) {
+            if (chatMessages.some((message) => message.id === messageId)) {
+              state.removeMessage(chatId, messageId);
+              break;
+            }
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
           event: "*",
           schema: "public",
           table: "invitations",
@@ -329,13 +429,7 @@ export function useChat(): UseChatReturn {
           if (!res.ok) throw new Error("Failed to fetch messages");
 
           const { data } = await res.json();
-          const deletedForMe = (() => {
-            try {
-              const key = `deleted-for-me-${userId}`;
-              const stored = localStorage.getItem(key);
-              return stored ? new Set<string>(JSON.parse(stored)) : new Set<string>();
-            } catch { return new Set<string>(); }
-          })();
+          const deletedForMe = new Set(readPendingDeletedMessages(userId));
           if (data.messages) {
             setMessages(activeId, data.messages.filter((m: { id: string }) => !deletedForMe.has(m.id)));
             setReactions(activeId, data.reactions ?? []);
@@ -665,17 +759,20 @@ export function useChat(): UseChatReturn {
 
       if (mode === "for_me") {
         removeMessage(activeChatId, messageId);
-        // Persist so message doesn't reappear on reload
-        if (userId) {
-          try {
-            const key = `deleted-for-me-${userId}`;
-            const stored = localStorage.getItem(key);
-            const ids: string[] = stored ? JSON.parse(stored) : [];
-            if (!ids.includes(messageId)) {
-              ids.push(messageId);
-              localStorage.setItem(key, JSON.stringify(ids));
-            }
-          } catch { /* ignore */ }
+        addPendingDeletedMessage(userId, messageId);
+
+        try {
+          const res = await fetch(`/api/chat/${activeChatId}/messages`, {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ messageId, mode: "for_me" }),
+          });
+
+          if (res.ok) {
+            removePendingDeletedMessage(userId, messageId);
+          }
+        } catch {
+          // Keep the local fallback and let silent sync retry later.
         }
         return;
       }
@@ -815,13 +912,7 @@ export function useChat(): UseChatReturn {
       if (!res.ok) return;
       const { data } = await res.json();
       if (data.messages?.length > 0) {
-        const deletedForMe = (() => {
-          try {
-            const key = `deleted-for-me-${userId}`;
-            const stored = localStorage.getItem(key);
-            return stored ? new Set<string>(JSON.parse(stored)) : new Set<string>();
-          } catch { return new Set<string>(); }
-        })();
+        const deletedForMe = new Set(readPendingDeletedMessages(userId));
         prependMessages(activeChatId, data.messages.filter((m: { id: string }) => !deletedForMe.has(m.id)));
       }
       setHasMore(activeChatId, data.hasMore ?? false);

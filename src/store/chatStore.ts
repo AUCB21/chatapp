@@ -162,10 +162,17 @@ export const useChatStore = create<ChatState>()(
           (state) => {
             const existing = state.messages[chatId];
             if (!existing) return state;
+            const nextReactions = (state.reactions[chatId] ?? []).filter(
+              (reaction) => reaction.messageId !== messageId
+            );
             return {
               messages: {
                 ...state.messages,
                 [chatId]: existing.filter((m) => m.id !== messageId),
+              },
+              reactions: {
+                ...state.reactions,
+                [chatId]: nextReactions,
               },
             };
           },

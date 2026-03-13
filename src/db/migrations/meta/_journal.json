@@ -64,6 +64,13 @@
       "when": 1773619200000,
       "tag": "0008_fix_messages_rls_realtime",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1773705600000,
+      "tag": "0009_deleted_for_me",
+      "breakpoints": true
     }
   ]
 }
