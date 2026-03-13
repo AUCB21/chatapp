@@ -127,7 +127,8 @@ export default function ChatPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const prevScrollHeightRef = useRef<number | null>(null);
+  const paginationScrollHeightRef = useRef<number | null>(null);
+  const skipAutoScrollRef = useRef(false);
 
   const unreadCounts = useChatStore((s) => s.unreadCounts);
   const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
@@ -140,6 +141,26 @@ export default function ChatPage() {
   /* ── Effects ── */
 
   useEffect(() => {
+    if (paginationScrollHeightRef.current === null) return;
+
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const viewport = container.querySelector(
+      '[data-slot="scroll-area-viewport"]'
+    ) as HTMLElement;
+
+    if (!viewport) return;
+
+    viewport.scrollTop += viewport.scrollHeight - paginationScrollHeightRef.current;
+    paginationScrollHeightRef.current = null;
+  }, [messages.length]);
+
+  useEffect(() => {
+    if (skipAutoScrollRef.current) {
+      skipAutoScrollRef.current = false;
+      return;
+    }
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [activeChatId, messages.length]);
 
@@ -156,25 +177,14 @@ export default function ChatPage() {
         scrollHeight - scrollTop - clientHeight > 100 && messages.length > 0
       );
       if (scrollTop < 80 && hasMoreMessages && !isLoadingMore) {
+        paginationScrollHeightRef.current = viewport.scrollHeight;
+        skipAutoScrollRef.current = true;
         loadMoreMessages();
       }
     };
     viewport.addEventListener("scroll", handleScroll);
     return () => viewport.removeEventListener("scroll", handleScroll);
   }, [messages.length, activeChatId, hasMoreMessages, isLoadingMore, loadMoreMessages]);
-
-  // After prepending older messages, restore scroll position so view doesn't jump
-  useEffect(() => {
-    if (prevScrollHeightRef.current === null) return;
-    const container = messagesContainerRef.current;
-    if (!container) return;
-    const viewport = container.querySelector(
-      '[data-slot="scroll-area-viewport"]'
-    ) as HTMLElement;
-    if (!viewport) return;
-    viewport.scrollTop += viewport.scrollHeight - prevScrollHeightRef.current;
-    prevScrollHeightRef.current = null;
-  }, [messages.length]);
 
   useEffect(() => {
     setJoinError(null);
@@ -298,8 +308,15 @@ export default function ChatPage() {
 
   function handleLoadMore() {
     const container = messagesContainerRef.current;
-    const viewport = container?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement | null;
-    if (viewport) prevScrollHeightRef.current = viewport.scrollHeight;
+    const viewport = container?.querySelector(
+      '[data-slot="scroll-area-viewport"]'
+    ) as HTMLElement | null;
+
+    if (viewport) {
+      paginationScrollHeightRef.current = viewport.scrollHeight;
+      skipAutoScrollRef.current = true;
+    }
+
     loadMoreMessages();
   }
 
