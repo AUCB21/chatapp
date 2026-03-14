@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS chat_user_profiles (
 ALTER TABLE chat_user_profiles ENABLE ROW LEVEL SECURITY;
 
 -- Any chat member can read overrides for their chats
+DROP POLICY IF EXISTS "chat_user_profiles_select" ON chat_user_profiles;
 CREATE POLICY "chat_user_profiles_select" ON chat_user_profiles
   FOR SELECT USING (
     chat_id IN (
@@ -22,13 +23,16 @@ CREATE POLICY "chat_user_profiles_select" ON chat_user_profiles
   );
 
 -- Users can set their own per-chat profile
+DROP POLICY IF EXISTS "chat_user_profiles_upsert_self" ON chat_user_profiles;
 CREATE POLICY "chat_user_profiles_upsert_self" ON chat_user_profiles
   FOR INSERT WITH CHECK (user_id = (SELECT auth.uid()));
 
+DROP POLICY IF EXISTS "chat_user_profiles_update_self" ON chat_user_profiles;
 CREATE POLICY "chat_user_profiles_update_self" ON chat_user_profiles
   FOR UPDATE USING (user_id = (SELECT auth.uid()));
 
 -- Admins can set per-chat profiles for others
+DROP POLICY IF EXISTS "chat_user_profiles_insert_admin" ON chat_user_profiles;
 CREATE POLICY "chat_user_profiles_insert_admin" ON chat_user_profiles
   FOR INSERT WITH CHECK (
     chat_id IN (
@@ -37,6 +41,7 @@ CREATE POLICY "chat_user_profiles_insert_admin" ON chat_user_profiles
     )
   );
 
+DROP POLICY IF EXISTS "chat_user_profiles_update_admin" ON chat_user_profiles;
 CREATE POLICY "chat_user_profiles_update_admin" ON chat_user_profiles
   FOR UPDATE USING (
     chat_id IN (
@@ -45,6 +50,7 @@ CREATE POLICY "chat_user_profiles_update_admin" ON chat_user_profiles
     )
   );
 
+DROP POLICY IF EXISTS "chat_user_profiles_delete" ON chat_user_profiles;
 CREATE POLICY "chat_user_profiles_delete" ON chat_user_profiles
   FOR DELETE USING (
     user_id = (SELECT auth.uid())
@@ -54,4 +60,7 @@ CREATE POLICY "chat_user_profiles_delete" ON chat_user_profiles
     )
   );
 
-ALTER PUBLICATION supabase_realtime ADD TABLE chat_user_profiles;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE chat_user_profiles;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

@@ -108,5 +108,11 @@ CREATE POLICY "call_participants_update_self_or_host" ON call_participants
   );
 
 -- 4. Realtime publication
-ALTER PUBLICATION supabase_realtime ADD TABLE call_sessions;
-ALTER PUBLICATION supabase_realtime ADD TABLE call_participants;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE call_sessions;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE call_participants;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

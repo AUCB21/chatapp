@@ -25,20 +25,27 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 
 -- Users can read any profile (needed to display names in chats)
+DROP POLICY IF EXISTS "user_profiles_select" ON user_profiles;
 CREATE POLICY "user_profiles_select" ON user_profiles
   FOR SELECT USING (true);
 
 -- Users can only update their own profile
+DROP POLICY IF EXISTS "user_profiles_update" ON user_profiles;
 CREATE POLICY "user_profiles_update" ON user_profiles
   FOR UPDATE USING (auth.uid() = user_id);
 
 -- Users can insert their own profile
+DROP POLICY IF EXISTS "user_profiles_insert" ON user_profiles;
 CREATE POLICY "user_profiles_insert" ON user_profiles
   FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 -- Users can delete their own profile
+DROP POLICY IF EXISTS "user_profiles_delete" ON user_profiles;
 CREATE POLICY "user_profiles_delete" ON user_profiles
   FOR DELETE USING (auth.uid() = user_id);
 
 -- Add to realtime publication so status changes are visible
-ALTER PUBLICATION supabase_realtime ADD TABLE user_profiles;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE user_profiles;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

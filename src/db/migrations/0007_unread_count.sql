@@ -69,6 +69,7 @@ ALTER TABLE memberships REPLICA IDENTITY FULL;
 --    to SELECT operations, which Realtime can evaluate.
 DROP POLICY IF EXISTS "memberships_admin_manage" ON memberships;
 
+DROP POLICY IF EXISTS "memberships_admin_insert" ON memberships;
 CREATE POLICY "memberships_admin_insert" ON memberships
   FOR INSERT WITH CHECK (
     chat_id IN (
@@ -78,6 +79,7 @@ CREATE POLICY "memberships_admin_insert" ON memberships
     )
   );
 
+DROP POLICY IF EXISTS "memberships_admin_update" ON memberships;
 CREATE POLICY "memberships_admin_update" ON memberships
   FOR UPDATE USING (
     chat_id IN (
@@ -87,6 +89,7 @@ CREATE POLICY "memberships_admin_update" ON memberships
     )
   );
 
+DROP POLICY IF EXISTS "memberships_admin_delete" ON memberships;
 CREATE POLICY "memberships_admin_delete" ON memberships
   FOR DELETE USING (
     chat_id IN (

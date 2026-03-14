@@ -46,19 +46,23 @@ ALTER TABLE read_receipts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reactions ENABLE ROW LEVEL SECURITY;
 
 -- Read receipts: users can read/write their own receipts for chats they're in
+DROP POLICY IF EXISTS "read_receipts_select" ON read_receipts;
 CREATE POLICY "read_receipts_select" ON read_receipts
   FOR SELECT USING (
     user_id = auth.uid()
     OR chat_id IN (SELECT chat_id FROM memberships WHERE user_id = auth.uid())
   );
 
+DROP POLICY IF EXISTS "read_receipts_upsert" ON read_receipts;
 CREATE POLICY "read_receipts_upsert" ON read_receipts
   FOR INSERT WITH CHECK (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "read_receipts_update" ON read_receipts;
 CREATE POLICY "read_receipts_update" ON read_receipts
   FOR UPDATE USING (user_id = auth.uid());
 
 -- Reactions: members can see all reactions, add/remove their own
+DROP POLICY IF EXISTS "reactions_select" ON reactions;
 CREATE POLICY "reactions_select" ON reactions
   FOR SELECT USING (
     message_id IN (
@@ -68,12 +72,20 @@ CREATE POLICY "reactions_select" ON reactions
     )
   );
 
+DROP POLICY IF EXISTS "reactions_insert" ON reactions;
 CREATE POLICY "reactions_insert" ON reactions
   FOR INSERT WITH CHECK (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "reactions_delete" ON reactions;
 CREATE POLICY "reactions_delete" ON reactions
   FOR DELETE USING (user_id = auth.uid());
 
 -- 7. Add to Realtime publication
-ALTER PUBLICATION supabase_realtime ADD TABLE read_receipts;
-ALTER PUBLICATION supabase_realtime ADD TABLE reactions;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE read_receipts;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE reactions;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
