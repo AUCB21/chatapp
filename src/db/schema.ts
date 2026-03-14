@@ -13,6 +13,7 @@ import {
 // --- Enums ---
 
 export const userStatusEnum = pgEnum("user_status", ["online", "idle", "dnd"]);
+export const chatTypeEnum = pgEnum("chat_type", ["direct", "group"]);
 export const memberRoleEnum = pgEnum("member_role", ["read", "write", "admin"]);
 export const invitationStatusEnum = pgEnum("invitation_status", [
   "pending",
@@ -62,7 +63,8 @@ export const userProfiles = pgTable("user_profiles", {
  */
 export const chats = pgTable("chats", {
   id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull(),
+  name: text("name"), // null for direct chats; required for group chats
+  type: chatTypeEnum("type").notNull().default("group"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -242,6 +244,7 @@ export const invitations = pgTable(
 
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type UserStatus = (typeof userStatusEnum.enumValues)[number];
+export type ChatType = (typeof chatTypeEnum.enumValues)[number];
 export type Chat = typeof chats.$inferSelect;
 export type Membership = typeof memberships.$inferSelect;
 export type Message = typeof messages.$inferSelect;

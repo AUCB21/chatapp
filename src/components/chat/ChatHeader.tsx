@@ -70,7 +70,7 @@ export default function ChatHeader({
   onToggleSearch,
   onToggleMembers,
 }: ChatHeaderProps) {
-  const avatarColor = getAvatarColor(chat.name);
+  const avatarColor = getAvatarColor(chat.displayName);
   const isOnline = onlineUsers.length > 0;
 
   return (
@@ -88,12 +88,12 @@ export default function ChatHeader({
 
       <Avatar className="w-8 h-8 shrink-0">
         <AvatarFallback className={`text-xs font-semibold ${avatarColor}`}>
-          {chat.name[0].toUpperCase()}
+          {chat.displayName[0].toUpperCase()}
         </AvatarFallback>
       </Avatar>
 
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold truncate leading-tight">{chat.name}</p>
+        <p className="text-sm font-semibold truncate leading-tight">{chat.displayName}</p>
         <div className="flex items-center gap-1.5 mt-0.5">
           {!isPending && (
             <div className={`w-1.5 h-1.5 rounded-full transition-colors ${

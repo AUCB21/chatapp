@@ -84,7 +84,7 @@ export default function ChatSidebar({
     const nonPending = chats.filter((c) => c.role !== "pending");
     if (!search.trim()) return nonPending;
     const term = search.trim().toLowerCase();
-    return nonPending.filter((chat) => chat.name.toLowerCase().includes(term));
+    return nonPending.filter((chat) => chat.displayName.toLowerCase().includes(term));
   }, [chats, search]);
 
   const displayName = profile?.displayName ?? userEmail?.split("@")[0] ?? "User";
@@ -155,11 +155,11 @@ export default function ChatSidebar({
                   className="flex items-center gap-2 px-1 py-1.5"
                 >
                   <Avatar className="w-7 h-7 shrink-0">
-                    <AvatarFallback className={`text-[0.6rem] font-semibold ${getAvatarColor(chat.name)}`}>
-                      {chat.name[0].toUpperCase()}
+                    <AvatarFallback className={`text-[0.6rem] font-semibold ${getAvatarColor(chat.displayName)}`}>
+                      {chat.displayName[0].toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
-                  <p className="text-xs font-medium truncate flex-1 min-w-0">{chat.name}</p>
+                  <p className="text-xs font-medium truncate flex-1 min-w-0">{chat.displayName}</p>
                   <div className="flex gap-1 shrink-0">
                     <button
                       onClick={() => onJoin(chat.id)}
@@ -221,7 +221,7 @@ export default function ChatSidebar({
 
           {visibleChats.map((chat) => {
             const isActive = chat.id === activeChatId;
-            const avatarColor = getAvatarColor(chat.name);
+            const avatarColor = getAvatarColor(chat.displayName);
             const unread = unreadCounts[chat.id] ?? 0;
             const isMuted = mutedChats.has(chat.id);
 
@@ -241,7 +241,7 @@ export default function ChatSidebar({
                       isActive ? "bg-primary text-primary-foreground" : avatarColor
                     }`}
                   >
-                    {chat.name[0].toUpperCase()}
+                    {chat.displayName[0].toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
 
@@ -249,7 +249,7 @@ export default function ChatSidebar({
                   <p className={`text-sm font-medium truncate leading-tight ${
                     isActive ? "text-primary" : unread > 0 ? "text-foreground" : ""
                   }`}>
-                    {chat.name}
+                    {chat.displayName}
                   </p>
                   <p className="text-[0.65rem] mt-0.5 text-muted-foreground truncate">
                     {chat.role === "declined" ? "Declined" : chat.role}

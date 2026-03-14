@@ -1,14 +1,20 @@
 import { NextRequest } from "next/server";
 import { getAuthUser } from "@/lib/supabaseServer";
-import { getAccessibleChats, createChat } from "@/db/queries/chats";
+import {
+  getAccessibleChats,
+  createChat,
+  getDirectChatPartnerNames,
+} from "@/db/queries/chats";
 import { getPendingInvitationsForEmail } from "@/db/queries/invitations";
 import { createChatSchema } from "@/lib/validation";
 import { ok, created, unauthorized, badRequest, serverError } from "@/lib/apiResponse";
 
 /**
  * GET /api/chat
- * Returns all chats the user is a member of, plus any pending invitations
- * (visible in the sidebar with role "pending" until accepted/declined).
+ * Returns all chats the user is a member of, plus pending invitations.
+ * Each chat includes a computed `displayName`:
+ *  - direct: other member's display name (or invited email while pending)
+ *  - group: chat name
  */
 export async function GET() {
   const user = await getAuthUser();
@@ -20,11 +26,28 @@ export async function GET() {
       getPendingInvitationsForEmail(user.email ?? ""),
     ]);
 
-    // Build unreadCounts from the membership column (populated by DB trigger)
+    // Unread counts from membership column
     const unreadCounts: Record<string, number> = {};
     for (const c of memberChats) {
       if (c.unreadCount > 0) unreadCounts[c.id] = c.unreadCount;
     }
+
+    // Compute display names for direct chats
+    const directChatIds = memberChats
+      .filter((c) => c.type === "direct")
+      .map((c) => c.id);
+    const directNames =
+      directChatIds.length > 0
+        ? await getDirectChatPartnerNames(directChatIds, user.id)
+        : {};
+
+    const chatsWithNames = memberChats.map((c) => ({
+      ...c,
+      displayName:
+        c.type === "direct"
+          ? (directNames[c.id] ?? "Direct Message")
+          : (c.name ?? "Group Chat"),
+    }));
 
     const memberChatIds = new Set(memberChats.map((c) => c.id));
 
@@ -33,11 +56,17 @@ export async function GET() {
       .map((p) => ({
         id: p.chatId,
         name: p.chatName,
+        type: p.chatType,
+        displayName:
+          p.chatType === "direct"
+            ? (p.inviterDisplayName ?? "Direct Message")
+            : (p.chatName ?? "Group Chat"),
         createdAt: p.chatCreatedAt,
         role: "pending" as const,
+        unreadCount: 0,
       }));
 
-    return ok({ chats: [...memberChats, ...pendingChats], unreadCounts });
+    return ok({ chats: [...chatsWithNames, ...pendingChats], unreadCounts });
   } catch (error) {
     return serverError("Failed to fetch chats", error);
   }
@@ -45,7 +74,7 @@ export async function GET() {
 
 /**
  * POST /api/chat
- * Creates a new chat. Creator is automatically assigned admin role.
+ * Creates a new group chat. Creator is automatically assigned admin role.
  */
 export async function POST(req: NextRequest) {
   const user = await getAuthUser();
@@ -57,7 +86,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const chat = await createChat(parsed.data.name, user.id);
-    return created(chat);
+    return created({ ...chat, displayName: chat.name ?? "Group Chat" });
   } catch (error) {
     return serverError("Failed to create chat", error);
   }

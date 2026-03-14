@@ -34,9 +34,14 @@ export async function GET(_req: NextRequest, { params }: Params) {
       return forbidden("Invitation has expired");
     }
 
+    const displayName =
+      invitation.chatType === "direct"
+        ? "Direct Message"
+        : (invitation.chatName ?? "Group Chat");
+
     return ok({
       chatId: invitation.chatId,
-      chatName: invitation.chatName,
+      chatName: displayName,
       expiresAt: invitation.expiresAt,
     });
   } catch (error) {

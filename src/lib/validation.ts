@@ -40,10 +40,17 @@ export const updateMemberSchema = z.object({
   role: z.enum(["read", "write", "admin"]),
 });
 
-export const createInviteSchema = z.object({
-  chatName: z.string().min(1).max(100).trim(),
-  invitedEmail: z.string().email().optional(),
-});
+export const createInviteSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("direct"),
+    invitedEmail: z.string().email(),
+  }),
+  z.object({
+    type: z.literal("group"),
+    chatName: z.string().min(1).max(100).trim(),
+    invitedEmails: z.array(z.string().email()).max(50).optional(),
+  }),
+]);
 
 const hexColor = z
   .string()

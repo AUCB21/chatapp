@@ -24,10 +24,10 @@ export default function PendingPrompt({
       <div className="text-center max-w-xs">
         <Avatar className="w-16 h-16 mx-auto mb-5">
           <AvatarFallback className="bg-muted text-muted-foreground text-2xl">
-            {chat.name[0].toUpperCase()}
+            {chat.displayName[0].toUpperCase()}
           </AvatarFallback>
         </Avatar>
-        <p className="text-sm font-semibold mb-1">{chat.name}</p>
+        <p className="text-sm font-semibold mb-1">{chat.displayName}</p>
         <p className="text-xs text-muted-foreground mb-7">
           You&apos;ve been invited to join this chat. Accept to start reading
           and sending messages.

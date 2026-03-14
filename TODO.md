@@ -16,6 +16,9 @@
 ### ~~4. Real Read Receipt Logic~~ DONE
 ~~`msg.status` never updated to `"read"`.~~ `markRead` called on initial message load; `read_receipts` table updated server-side.
 
+### ~~5. Member Management UI~~ DONE
+~~No way to see who is in a chat, add members after creation, or view/change roles.~~ Members panel implemented with role management wired to `/api/chat/[chatId]/members`.
+
 ### ~~6. Reconnection Feedback~~ DONE
 ~~Silent failure on Realtime drop.~~ Banner shows "Reconnecting…" / "Back online" via `useConnectionStatus`.
 
@@ -61,36 +64,35 @@
 ### ~~23. Global Incoming Call Modal~~ DONE
 ~~CallModal only showed when inside the relevant chat.~~ Global `call_sessions` postgres_changes listener detects ringing calls in any member chat; `useVoiceCall` receives the correct chatId regardless of which chat is open.
 
+### ~~25. Delete-for-Me Server-Side Persistence~~ DONE
+~~"Delete for me" was stored only in `localStorage` per browser.~~ Hidden messages are now persisted server-side with a silent localStorage migration fallback for older clients.
+
 ### ~~26. Invite Link Single-Use Enforcement~~ DONE
 ~~An accepted invite token is not invalidated server-side after use.~~ Invite validation and accept flows now reject tokens whose status is not `pending`.
 
-### ~~25. Delete-for-Me Server-Side Persistence~~ DONE
-~~"Delete for me" was stored only in `localStorage` per browser.~~ Hidden messages are now persisted server-side with a silent localStorage migration fallback for older clients.
+### ~~28. User Menu & Profile Settings~~ DONE
+~~No user settings area.~~ Sidebar settings panel with profile editing (username, displayName), theme (light/dark/system), custom accent colors (background, font, chat bubble), Discord-style presence (online/idle/DND with auto-idle after 5min), password reset, and delete account with cascading cleanup. `user_profiles` table + RLS + boot preload. ⚠️ Requires migration `0010_user_profiles.sql` on Supabase.
+
+### ~~30. Login Boot Preload~~ DONE
+~~Chat UI mounted in partially empty state after login.~~ Boot sequence preloads profile → chats → first chat messages before first paint. Progress indicator with labeled steps.
+
+### ~~31. Invitation Email for Non-Existing Users~~ DONE
+~~Inviting an email with no account silently did nothing.~~ `inviteUserByEmail` admin API sends a signup magic-link email. Fire-and-forget, non-blocking. Requires `SUPABASE_SERVICE_ROLE_KEY` in env.
+
+### ~~33. Chat Type Refactor — One-on-One vs Group~~ DONE
+~~All chats required a name; no distinction between DM and group.~~ Direct chats have no name (display name derived from other participant). Group chats require a name. NewChatModal redesigned with Direct / Group toggle and multi-email invite for groups. `chat_type` enum + `type` column added to schema. ⚠️ Requires migration `0011_chat_types.sql` on Supabase.
 
 ---
 
 ## 🔴 High Priority — Users will hit these immediately
 
 ### Dependency-First Execution Order
-1) **30** Login boot preload (faster first meaningful paint)
-2) **5** Member management UI (foundation for profile editing)
-3) **28** User menu + global profile settings
-4) **29** Per-chat user detail overrides (depends on 5 + 28)
-5) **16** File/image sharing MVP
-6) **11** Storage hardening gate before production rollout of 16
-7) **27** Jump/reaction overlay polish
-8) **24** DB role restriction for production security
-9) **9** Me-to-me personal chat
-
-### 30. Login Boot Preload (Chats + First Page)
-After successful login, preload core chat data and only render the main app once initial data is ready.
-
-- Fetch chat list first, then preload the initial active chat messages using `PAGINATION_SIZE` (same first-page size as normal load).
-- Add a boot/loading gate so the chat UI does not mount in a partially empty state.
-- Keep a clear fallback: if preload fails, show retry/error state instead of rendering broken UI.
-- Avoid duplicate fetches between bootstrap preload and existing `useChat` effects (single source of truth for initial load).
-- Ensure unread counts, memberships, and active chat selection are hydrated before first paint.
-- Measure login-to-interactive time to confirm preload improves perceived startup UX.
+1) **29** Per-chat user detail overrides (depends on 5 + 28 ✅)
+2) **16** File/image sharing MVP
+3) **11** Storage hardening gate before production rollout of 16
+4) **27** Jump/reaction overlay polish
+5) **24** DB role restriction for production security
+6) **9** Me-to-me personal chat
 
 ### 16. File / Image Sharing
 The `<Paperclip>` button is rendered but does nothing. Implement file/image sharing with a single storage provider and attachment metadata in DB. Blocked by item 11 for production hardening.
@@ -128,20 +130,6 @@ After item 16 works in staging, harden the chosen storage provider before produc
 
 ## 🟡 Medium Priority — Noticeable product gaps
 
-### 5. Member Management UI
-No way to see who is in a chat, add members after creation, or view/change roles. Needs a members panel (side sheet or modal) wired to the existing `/api/chat/[chatId]/members` endpoint.
-
-### 28. User Menu & Profile Settings
-Add a user menu/settings area for profile, account, and personalization controls.
-
-- Show user identity details (display name and email) with editable profile fields.
-- Add password update handler (current password + new password flow with validation and feedback).
-- Add app appearance controls (theme colors/background style handler) and persist preferences.
-- Add status selection (e.g., online/away/do-not-disturb) and reflect status in UI/presence.
-- Add profile image selection/upload flow; store image using the storage approach from items 11/16.
-- Wire existing Delete Account logic into the menu as a destructive action with confirmation UX.
-- Define API/store boundaries for profile updates so changes sync across sessions/devices.
-
 ### 29. Per-Chat User Details Editing (Forked from item 28)
 Allow modifying chat participants' visible details (username, profile picture, status, etc.) from chat management flows.
 
@@ -155,14 +143,6 @@ Allow modifying chat participants' visible details (username, profile picture, s
 
 ### 9. Me-to-Me Personal Chat
 Add a self-chat so each user has a personal notes/saved-messages space. Should appear as a pinned chat and work with normal message and search flows.
-
-### 31. Invitation Email for Non-Existing Users
-When a direct email invitation is sent and the target has no account, send a Supabase `inviteUserByEmail` signup magic-link. Requires `SUPABASE_SERVICE_ROLE_KEY` in env.
-
-- Admin client utility created at `src/lib/supabaseAdmin.ts`.
-- Fire-and-forget call in `POST /api/invite` — never blocks the invitation response.
-- If user already exists, Supabase returns an error which is silently ignored.
-- Redirect target: `/login` so the new user lands on the login page after signup.
 
 ---
 

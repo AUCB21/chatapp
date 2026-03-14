@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../index";
-import { chats, memberships, invitations } from "../schema";
+import { chats, memberships, invitations, userProfiles } from "../schema";
+import type { ChatType } from "../schema";
 import { randomBytes } from "crypto";
 
 const TOKEN_BYTES = 32;
@@ -17,15 +18,25 @@ function expiresAt(): Date {
 }
 
 /**
- * Creates a chat (creator = admin) and an invitation record in one transaction.
+ * Creates a chat and invitation(s) in one transaction.
+ *
+ * - type "direct": name is null, exactly one invitedEmail required.
+ * - type "group": name required, invitedEmails can be empty (link invite) or many.
+ *
+ * Returns { chat, invitations, inviteToken? }
+ * inviteToken is only set when invitedEmails is empty (link-based group invite).
  */
 export async function createChatWithInvitation(
-  chatName: string,
   creatorId: string,
-  invitedEmail?: string
+  chatType: ChatType,
+  invitedEmails: string[],
+  chatName?: string
 ) {
   return db.transaction(async (tx) => {
-    const [chat] = await tx.insert(chats).values({ name: chatName }).returning();
+    const [chat] = await tx
+      .insert(chats)
+      .values({ name: chatName ?? null, type: chatType })
+      .returning();
 
     await tx.insert(memberships).values({
       userId: creatorId,
@@ -33,21 +44,33 @@ export async function createChatWithInvitation(
       role: "admin",
     });
 
-    const token = generateToken();
+    // No emails → generate a shareable link token (groups only)
+    if (invitedEmails.length === 0) {
+      const token = generateToken();
+      const [invitation] = await tx
+        .insert(invitations)
+        .values({
+          chatId: chat.id,
+          invitedByUserId: creatorId,
+          invitedEmail: `link+${token}@invite.local`,
+          token,
+          expiresAt: expiresAt(),
+        })
+        .returning();
+      return { chat, invitations: [invitation], inviteToken: token };
+    }
 
-    const [invitation] = await tx
-      .insert(invitations)
-      .values({
-        chatId: chat.id,
-        invitedByUserId: creatorId,
-        invitedEmail:
-          invitedEmail?.toLowerCase() ?? `link+${token}@invite.local`,
-        token,
-        expiresAt: expiresAt(),
-      })
-      .returning();
+    // One or more emails → create one invitation per email
+    const values = invitedEmails.map((email) => ({
+      chatId: chat.id,
+      invitedByUserId: creatorId,
+      invitedEmail: email.toLowerCase(),
+      token: generateToken(),
+      expiresAt: expiresAt(),
+    }));
 
-    return { chat, invitation };
+    const created = await tx.insert(invitations).values(values).returning();
+    return { chat, invitations: created, inviteToken: undefined };
   });
 }
 
@@ -60,10 +83,13 @@ export async function getPendingInvitationsForEmail(email: string) {
     .select({
       chatId: invitations.chatId,
       chatName: chats.name,
+      chatType: chats.type,
+      inviterDisplayName: userProfiles.displayName,
       chatCreatedAt: chats.createdAt,
     })
     .from(invitations)
     .innerJoin(chats, eq(chats.id, invitations.chatId))
+    .leftJoin(userProfiles, eq(userProfiles.userId, invitations.invitedByUserId))
     .where(
       and(
         eq(invitations.invitedEmail, email.toLowerCase()),
@@ -155,6 +181,7 @@ export async function getPendingInvitationByToken(token: string) {
       invitationId: invitations.id,
       chatId: invitations.chatId,
       chatName: chats.name,
+      chatType: chats.type,
       status: invitations.status,
       expiresAt: invitations.expiresAt,
     })

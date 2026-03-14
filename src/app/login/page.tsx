@@ -1,12 +1,21 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSessionStore } from "@/store/sessionStore";
 
 export default function LoginPage() {
   const router = useRouter();
+
+  // If Supabase redirects a recovery token here instead of /reset-password, forward it
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash;
+    if (hash.includes("type=recovery")) {
+      router.replace("/reset-password" + hash);
+    }
+  }, [router]);
   const setUser = useSessionStore((s) => s.setUser);
 
   const [email, setEmail] = useState("");

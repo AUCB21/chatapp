@@ -291,7 +291,7 @@ export function useChat(): UseChatReturn {
           // Browser notification + ping
           if (document.visibilityState !== "visible") {
             const chat = state.chats.find((c) => c.id === chatId);
-            const title = chat?.name ?? "New message";
+            const title = chat?.displayName ?? "New message";
             if (
               typeof Notification !== "undefined" &&
               Notification.permission === "granted"
@@ -377,7 +377,7 @@ export function useChat(): UseChatReturn {
             if (isMuted) return;
 
             const chat = state.chats.find((c) => c.id === chatId);
-            const title = chat?.name ?? "New message";
+            const title = chat?.displayName ?? "New message";
 
             if (document.visibilityState !== "visible") {
               if (typeof Notification !== "undefined" && Notification.permission === "granted") {

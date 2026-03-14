@@ -14,16 +14,27 @@ export default function ResetPasswordPage() {
   const [ready, setReady] = useState(false);
   const [done, setDone] = useState(false);
 
-  // Supabase redirects here with a hash fragment containing access_token.
-  // The client lib picks it up automatically via onAuthStateChange.
+  // Supabase redirects here with a hash fragment containing access_token + type=recovery.
+  // We subscribe to PASSWORD_RECOVERY, but also check for an existing session on mount
+  // in case Supabase processed the hash before our listener was set up (race condition).
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event) => {
-        if (event === "PASSWORD_RECOVERY") {
-          setReady(true);
+        if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
+          if (window.location.hash.includes("type=recovery")) {
+            setReady(true);
+          }
         }
       }
     );
+
+    // Fallback: if the token was already consumed before we subscribed, check session
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session && window.location.hash.includes("type=recovery")) {
+        setReady(true);
+      }
+    });
+
     return () => subscription.unsubscribe();
   }, []);
 
