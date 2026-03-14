@@ -4,6 +4,7 @@ import { useState, useEffect, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import { PASSWORD_RULES } from "@/lib/validation";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -44,6 +45,11 @@ export default function ResetPasswordPage() {
 
     if (password !== confirm) {
       setError("Passwords do not match.");
+      return;
+    }
+
+    if (!PASSWORD_RULES.every((r) => r.test(password))) {
+      setError("Password does not meet all requirements.");
       return;
     }
 
@@ -125,13 +131,30 @@ export default function ResetPasswordPage() {
                 type="password"
                 autoComplete="new-password"
                 required
-                minLength={8}
+                minLength={10}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="········"
+                placeholder="Min. 10 characters"
                 disabled={loading}
                 className="w-full h-11 px-4 rounded-xl bg-muted/60 border border-border text-sm outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all placeholder:text-muted-foreground/50 disabled:opacity-50"
               />
+              {password.length > 0 && (
+                <ul className="space-y-0.5 mt-1.5">
+                  {PASSWORD_RULES.map((rule) => {
+                    const pass = rule.test(password);
+                    return (
+                      <li key={rule.label} className={`text-[0.65rem] flex items-center gap-1.5 ${pass ? "text-emerald-500" : "text-muted-foreground"}`}>
+                        {pass ? (
+                          <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+                        ) : (
+                          <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /></svg>
+                        )}
+                        {rule.label}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </div>
 
             <div className="space-y-1.5">

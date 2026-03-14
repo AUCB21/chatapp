@@ -228,7 +228,7 @@ export default function MessageBubble({
       className={`w-full flex ${isOwn ? "justify-end" : "justify-start"} ${
         isSameUser ? "mt-0.5" : "mt-4"
       } group relative px-3 py-0.5 rounded-xl transition-colors duration-200 ${
-        isHighlighted ? "bg-primary/8" : "bg-transparent"
+        isHighlighted ? "bg-primary/10 ring-1 ring-primary/20" : "bg-transparent"
       }`}
       onContextMenu={onContextMenu}
       onDoubleClick={handleDoubleClick}
@@ -396,11 +396,11 @@ export default function MessageBubble({
               </div>
             )}
 
-            {/* Emoji picker popup */}
+            {/* Emoji picker popup — positioned beside bubble to avoid overlapping content */}
             {isPickerOpen && !isDeleted && !isAnyEditing && (
               <div
                 onClick={(e) => e.stopPropagation()}
-                className={`absolute -top-20 ${
+                className={`absolute bottom-full mb-2 ${
                   isOwn ? "right-0" : "left-0"
                 } z-20 flex items-center gap-0.5 px-2 py-1.5 rounded-2xl bg-popover border border-border shadow-lg shadow-black/10 animate-in fade-in slide-in-from-bottom-2 duration-150`}
               >

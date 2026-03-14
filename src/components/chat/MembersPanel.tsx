@@ -23,6 +23,9 @@ interface Member {
   email: string;
   role: MemberRole;
   joinedAt: string;
+  displayName: string;
+  chatDisplayName: string | null;
+  globalDisplayName: string | null;
 }
 
 interface MembersPanelProps {
@@ -151,7 +154,7 @@ export default function MembersPanel({
           ) : (
             <ul className="py-1">
               {members.map((member) => {
-                const displayName = member.email.split("@")[0];
+                const displayName = member.displayName;
                 const isSelf = member.userId === currentUserId;
                 const badge = ROLE_BADGE[member.role];
                 const canManage = isAdmin && !isSelf;

@@ -5,7 +5,7 @@ import type { Chat, Message, MemberRole, Reaction } from "../db/schema";
 // --- Types ---
 
 export type ChatRole = MemberRole | "pending" | "declined";
-export type ChatWithRole = Chat & { role: ChatRole; displayName: string };
+export type ChatWithRole = Chat & { role: ChatRole; displayName: string; isSelfChat?: boolean };
 
 /** Grouped reactions for a message: emoji → { count, users[] } */
 export type ReactionGroup = Record<string, { count: number; users: string[] }>;

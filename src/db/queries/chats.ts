@@ -1,6 +1,6 @@
-import { eq, ne, and, inArray } from "drizzle-orm";
+import { eq, ne, and, inArray, sql } from "drizzle-orm";
 import { db } from "../index";
-import { chats, memberships, userProfiles, invitations } from "../schema";
+import { chats, memberships, userProfiles, invitations, chatUserProfiles } from "../schema";
 
 /**
  * Returns all chats the user is a member of, with their type and membership data.
@@ -33,10 +33,21 @@ export async function getDirectChatPartnerNames(
 
   const names: Record<string, string> = {};
 
-  // 1. Other members who have accepted and have a profile
+  // 1. Other members who have accepted — prefer per-chat override > global profile
   const joined = await db
-    .select({ chatId: memberships.chatId, displayName: userProfiles.displayName })
+    .select({
+      chatId: memberships.chatId,
+      chatDisplayName: chatUserProfiles.displayName,
+      globalDisplayName: userProfiles.displayName,
+    })
     .from(memberships)
+    .leftJoin(
+      chatUserProfiles,
+      and(
+        eq(chatUserProfiles.chatId, memberships.chatId),
+        eq(chatUserProfiles.userId, memberships.userId)
+      )
+    )
     .leftJoin(userProfiles, eq(userProfiles.userId, memberships.userId))
     .where(
       and(
@@ -46,7 +57,7 @@ export async function getDirectChatPartnerNames(
     );
 
   for (const row of joined) {
-    names[row.chatId] = row.displayName ?? "User";
+    names[row.chatId] = row.chatDisplayName ?? row.globalDisplayName ?? "User";
   }
 
   // 2. Invited email as fallback (other person hasn't joined yet)
@@ -98,6 +109,38 @@ export async function getChatById(chatId: string) {
     .limit(1);
 
   return result[0] ?? null;
+}
+
+/**
+ * Returns or creates the user's personal "Saved Messages" chat.
+ * A self-chat is a direct chat where the user is the only member.
+ */
+export async function getOrCreateSelfChat(userId: string) {
+  // Find existing self-chat: a direct chat where this user is the only member
+  const existing = await db.execute(sql`
+    SELECT c.id, c.name, c.type, c.created_at
+    FROM chats c
+    INNER JOIN memberships m ON m.chat_id = c.id
+    WHERE c.type = 'direct'
+      AND m.user_id = ${userId}
+      AND (SELECT COUNT(*) FROM memberships m2 WHERE m2.chat_id = c.id) = 1
+    LIMIT 1
+  `);
+
+  const row = (existing as unknown as Array<{
+    id: string; name: string | null; type: string; created_at: Date;
+  }>)[0];
+
+  if (row) {
+    return { id: row.id, name: row.name, type: row.type as "direct", createdAt: new Date(row.created_at) };
+  }
+
+  // Create self-chat
+  return db.transaction(async (tx) => {
+    const [chat] = await tx.insert(chats).values({ name: null, type: "direct" }).returning();
+    await tx.insert(memberships).values({ userId, chatId: chat.id, role: "admin" });
+    return chat;
+  });
 }
 
 /**

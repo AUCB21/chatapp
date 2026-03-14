@@ -1,6 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "../index";
 import { userProfiles, type UserProfile, type UserStatus } from "../schema";
+import { getOrCreateSelfChat } from "./chats";
 
 /**
  * Returns the user's profile, creating a default one if it doesn't exist.
@@ -39,6 +40,9 @@ export async function getOrCreateProfile(
       .limit(1);
     return refetched;
   }
+
+  // Auto-create personal "Saved Messages" chat for new users
+  await getOrCreateSelfChat(userId).catch(() => {});
 
   return created;
 }

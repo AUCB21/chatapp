@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bell, BellOff, EllipsisVertical, LogOut, Moon, Plus, Search, Settings, Sun } from "lucide-react";
+import { Bell, BellOff, Bookmark, EllipsisVertical, LogOut, Moon, Plus, Search, Settings, Sun } from "lucide-react";
 import { useProfileStore } from "@/store/profileStore";
 import type { ChatWithRole } from "@/store/chatStore";
 import type { UserStatus } from "@/db/schema";
@@ -241,7 +241,11 @@ export default function ChatSidebar({
                       isActive ? "bg-primary text-primary-foreground" : avatarColor
                     }`}
                   >
-                    {chat.displayName[0].toUpperCase()}
+                    {chat.isSelfChat ? (
+                      <Bookmark className="w-4 h-4" />
+                    ) : (
+                      chat.displayName[0].toUpperCase()
+                    )}
                   </AvatarFallback>
                 </Avatar>
 

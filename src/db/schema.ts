@@ -219,6 +219,27 @@ export const callParticipants = pgTable(
 );
 
 /**
+ * chat_user_profiles: per-chat display name / avatar overrides.
+ * Falls back to global user_profiles when not set.
+ */
+export const chatUserProfiles = pgTable(
+  "chat_user_profiles",
+  {
+    chatId: uuid("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull(), // FK → auth.users(id), set in SQL
+    displayName: text("display_name"),
+    avatarUrl: text("avatar_url"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.chatId, t.userId] }),
+  })
+);
+
+/**
  * invitations: email invitations to join a chat.
  * Chat is created immediately; invitee joins on acceptance.
  */
@@ -248,6 +269,7 @@ export type ChatType = (typeof chatTypeEnum.enumValues)[number];
 export type Chat = typeof chats.$inferSelect;
 export type Membership = typeof memberships.$inferSelect;
 export type Message = typeof messages.$inferSelect;
+export type ChatUserProfile = typeof chatUserProfiles.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
 export type ReadReceipt = typeof readReceipts.$inferSelect;
 export type Reaction = typeof reactions.$inferSelect;

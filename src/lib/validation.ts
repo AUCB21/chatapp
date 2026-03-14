@@ -1,8 +1,26 @@
 import { z } from "zod";
 
+/**
+ * Password must be at least 10 characters with uppercase, lowercase, and special character.
+ */
+export const passwordSchema = z
+  .string()
+  .min(10, "Must be at least 10 characters")
+  .regex(/[A-Z]/, "Must contain an uppercase letter")
+  .regex(/[a-z]/, "Must contain a lowercase letter")
+  .regex(/[^A-Za-z0-9]/, "Must contain a special character");
+
+/** Individual password rule checks for real-time UI feedback. */
+export const PASSWORD_RULES = [
+  { label: "At least 10 characters", test: (v: string) => v.length >= 10 },
+  { label: "One uppercase letter", test: (v: string) => /[A-Z]/.test(v) },
+  { label: "One lowercase letter", test: (v: string) => /[a-z]/.test(v) },
+  { label: "One special character", test: (v: string) => /[^A-Za-z0-9]/.test(v) },
+] as const;
+
 export const registerSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8),
+  password: passwordSchema,
 });
 
 export const createChatSchema = z.object({

@@ -82,17 +82,28 @@
 ### ~~33. Chat Type Refactor — One-on-One vs Group~~ DONE
 ~~All chats required a name; no distinction between DM and group.~~ Direct chats have no name (display name derived from other participant). Group chats require a name. NewChatModal redesigned with Direct / Group toggle and multi-email invite for groups. `chat_type` enum + `type` column added to schema. ⚠️ Requires migration `0011_chat_types.sql` on Supabase.
 
+### ~~29. Per-Chat User Details Editing~~ DONE
+~~No per-chat display name overrides.~~ `chat_user_profiles` table with `(chat_id, user_id)` PK. API endpoint `PATCH /api/chat/[chatId]/profile` for setting/clearing per-chat display names. Members panel uses effective `displayName` (per-chat > global > email prefix). ⚠️ Requires migration `0012_chat_user_profiles.sql` on Supabase.
+
+### ~~9. Me-to-Me Personal Chat~~ DONE
+~~No personal notes/saved-messages space.~~ Auto-created "Saved Messages" self-chat on first profile creation. Pinned at top of sidebar with bookmark icon. Uses existing direct chat type with single membership.
+
+### ~~27. Jump-To-Message + Reaction Overlay Polish~~ DONE
+~~Emoji picker popup overlapped message content above.~~ Repositioned emoji picker to `bottom-full` (above bubble, relative to bubble bottom). Enhanced jump-to-message highlight with ring indicator for better visibility.
+
+### ~~24. Restrict DB Role for Production~~ DONE
+~~`DATABASE_URL` connects as DB owner.~~ Migration `0013_app_server_role.sql` creates `app_server` role with DML-only permissions (SELECT/INSERT/UPDATE/DELETE). No SUPERUSER or BYPASSRLS. Includes template for login user creation.
+
+### ~~32. Password Strength Validator~~ DONE
+~~No password strength enforcement.~~ `PASSWORD_RULES` array with real-time UI checklist on register and reset-password pages. Minimum 10 chars, uppercase, lowercase, special character. Shared `passwordSchema` Zod validator.
+
 ---
 
 ## 🔴 High Priority — Users will hit these immediately
 
 ### Dependency-First Execution Order
-1) **29** Per-chat user detail overrides (depends on 5 + 28 ✅)
-2) **16** File/image sharing MVP
-3) **11** Storage hardening gate before production rollout of 16
-4) **27** Jump/reaction overlay polish
-5) **24** DB role restriction for production security
-6) **9** Me-to-me personal chat
+1) **16** File/image sharing MVP
+2) **11** Storage hardening gate before production rollout of 16
 
 ### 16. File / Image Sharing
 The `<Paperclip>` button is rendered but does nothing. Implement file/image sharing with a single storage provider and attachment metadata in DB. Blocked by item 11 for production hardening.
@@ -130,40 +141,10 @@ After item 16 works in staging, harden the chosen storage provider before produc
 
 ## 🟡 Medium Priority — Noticeable product gaps
 
-### 29. Per-Chat User Details Editing (Forked from item 28)
-Allow modifying chat participants' visible details (username, profile picture, status, etc.) from chat management flows.
-
-- Define scope clearly: global profile fields vs chat-specific overrides (recommended: chat-specific overrides).
-- Rework schema if needed (new `chat_user_profiles` table or equivalent) keyed by `chat_id + user_id`.
-- Add API endpoints for create/update/reset of chat-specific user details with role-based permissions.
-- Add UI controls in member management to edit/display per-chat username, image, and status.
-- Ensure fallback behavior: if chat-specific details are missing, use global user profile defaults.
-- Update message, sidebar, and header renderers to read effective profile (chat override first, global second).
-- Add migration/backfill plan so existing chats/users are not broken during schema transition.
-
-### 9. Me-to-Me Personal Chat
-Add a self-chat so each user has a personal notes/saved-messages space. Should appear as a pinned chat and work with normal message and search flows.
+_(All items completed or moved to High Priority)_
 
 ---
 
 ## 🔵 Lower Priority — Polish & Security
 
-### 24. Restrict DB Role for Production
-`DATABASE_URL` currently connects as the DB owner (bypasses RLS). Create a dedicated `app_server` role with `GRANT SELECT, INSERT, UPDATE, DELETE` only — no `SUPERUSER` or `BYPASSRLS`. Reduces blast radius if the connection string leaks. See security analysis in chat history.
-
-### 27. Jump-To-Message + Reaction Overlay Collision
-The reaction overlay can overlap the message content and conflict with jump-to-message highlighting.
-
-- Position the reaction overlay beside the target message bubble (left/right depending on ownership), not on top of message text.
-- Ensure jump-to-message keeps the highlighted bubble fully visible and unobstructed.
-- Keep overlay placement responsive on mobile and desktop, with no clipping at viewport edges.
-
-### 32. Password Strength Validator
-Enforce strong passwords on registration and password change flows.
-
-- Minimum 10 characters
-- At least one uppercase letter
-- At least one lowercase letter
-- At least one special character
-- Show real-time validation feedback in the register form
-- Apply same rules on reset-password page
+_(All items completed)_

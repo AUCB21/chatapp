@@ -41,13 +41,28 @@ export async function GET() {
         ? await getDirectChatPartnerNames(directChatIds, user.id)
         : {};
 
+    // Self-chats won't have a partner name — mark them as "Saved Messages"
+    const selfChatIds = new Set(
+      directChatIds.filter((id) => !directNames[id])
+    );
+
     const chatsWithNames = memberChats.map((c) => ({
       ...c,
+      isSelfChat: selfChatIds.has(c.id),
       displayName:
         c.type === "direct"
-          ? (directNames[c.id] ?? "Direct Message")
+          ? selfChatIds.has(c.id)
+            ? "Saved Messages"
+            : (directNames[c.id] ?? "Direct Message")
           : (c.name ?? "Group Chat"),
     }));
+
+    // Sort: self-chat first, then by createdAt
+    chatsWithNames.sort((a, b) => {
+      if (a.isSelfChat && !b.isSelfChat) return -1;
+      if (!a.isSelfChat && b.isSelfChat) return 1;
+      return 0;
+    });
 
     const memberChatIds = new Set(memberChats.map((c) => c.id));
 

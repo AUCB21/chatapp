@@ -415,7 +415,6 @@ export function useChat(): UseChatReturn {
           event: "INSERT",
           schema: "public",
           table: "invitations",
-          ...(userEmail ? { filter: `invited_email=eq.${userEmail}` } : {}),
         },
         () => { refreshChats(); }
       )
