@@ -15,28 +15,50 @@ export default function ResetPasswordPage() {
   const [ready, setReady] = useState(false);
   const [done, setDone] = useState(false);
 
-  // Supabase redirects here with a hash fragment containing access_token + type=recovery.
-  // We subscribe to PASSWORD_RECOVERY, but also check for an existing session on mount
-  // in case Supabase processed the hash before our listener was set up (race condition).
+  // Users arrive here with a hash fragment containing access_token + type=recovery.
+  // Supabase JS auto-detects the hash and exchanges it for a session.
+  // We listen for both PASSWORD_RECOVERY and SIGNED_IN events.
   useEffect(() => {
+    let resolved = false;
+    const hash = window.location.hash;
+    const isRecoveryHash = hash.includes("type=recovery");
+
+    function markReady() {
+      if (resolved) return;
+      resolved = true;
+      setReady(true);
+    }
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event) => {
-        if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
-          if (window.location.hash.includes("type=recovery")) {
-            setReady(true);
-          }
+        if (event === "PASSWORD_RECOVERY") {
+          markReady();
+        } else if (event === "SIGNED_IN" && isRecoveryHash) {
+          markReady();
         }
       }
     );
 
-    // Fallback: if the token was already consumed before we subscribed, check session
+    // Poll for session — Supabase processes the hash asynchronously.
+    // Check every second until we find a session or give up after 15s.
+    let attempts = 0;
+    const interval = setInterval(() => {
+      attempts++;
+      supabase.auth.getSession().then(({ data }) => {
+        if (data.session) markReady();
+      });
+      if (attempts >= 15) clearInterval(interval);
+    }, 1000);
+
+    // Also check immediately for pre-existing session (e.g. navigated from callback)
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session && window.location.hash.includes("type=recovery")) {
-        setReady(true);
-      }
+      if (data.session) markReady();
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      clearInterval(interval);
+    };
   }, []);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {

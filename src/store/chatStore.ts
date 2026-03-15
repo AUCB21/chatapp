@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
-import type { Chat, Message, MemberRole, Reaction } from "../db/schema";
+import type { Chat, Message, MemberRole, Reaction, Attachment } from "../db/schema";
 
 // --- Types ---
 
@@ -10,6 +10,9 @@ export type ChatWithRole = Chat & { role: ChatRole; displayName: string; isSelfC
 /** Grouped reactions for a message: emoji → { count, users[] } */
 export type ReactionGroup = Record<string, { count: number; users: string[] }>;
 
+/** Attachment with a signed URL for display */
+export type AttachmentWithUrl = Attachment & { signedUrl?: string | null };
+
 export interface ChatState {
   // Data
   chats: ChatWithRole[];
@@ -17,6 +20,7 @@ export interface ChatState {
   messages: Record<string, Message[]>; // keyed by chatId
   memberships: Record<string, ChatRole>; // chatId → user's role (incl. "pending")
   reactions: Record<string, Reaction[]>; // keyed by chatId
+  attachments: Record<string, Record<string, AttachmentWithUrl[]>>; // chatId → messageId → attachments
   unreadCounts: Record<string, number>; // chatId → unread message count
   hasMoreMessages: Record<string, boolean>; // chatId → whether older messages exist
   booted: boolean; // true after boot preload completes
@@ -40,6 +44,8 @@ export interface ChatState {
   appendMessage: (chatId: string, message: Message) => void;
   updateMessage: (chatId: string, messageId: string, updates: Partial<Message>) => void;
   removeMessage: (chatId: string, messageId: string) => void;
+  setAttachments: (chatId: string, map: Record<string, AttachmentWithUrl[]>) => void;
+  addAttachments: (chatId: string, messageId: string, items: AttachmentWithUrl[]) => void;
   setReactions: (chatId: string, reactions: Reaction[]) => void;
   addReaction: (chatId: string, reaction: Reaction) => void;
   removeReaction: (chatId: string, reactionId: string) => void;
@@ -63,6 +69,7 @@ const initialState = {
   messages: {},
   memberships: {},
   reactions: {},
+  attachments: {},
   unreadCounts: {},
   hasMoreMessages: {},
   booted: false,
@@ -184,6 +191,33 @@ export const useChatStore = create<ChatState>()(
           },
           false,
           "removeMessage"
+        ),
+
+      setAttachments: (chatId, map) =>
+        set(
+          (state) => ({
+            attachments: {
+              ...state.attachments,
+              [chatId]: { ...(state.attachments[chatId] ?? {}), ...map },
+            },
+          }),
+          false,
+          "setAttachments"
+        ),
+
+      addAttachments: (chatId, messageId, items) =>
+        set(
+          (state) => ({
+            attachments: {
+              ...state.attachments,
+              [chatId]: {
+                ...(state.attachments[chatId] ?? {}),
+                [messageId]: items,
+              },
+            },
+          }),
+          false,
+          "addAttachments"
         ),
 
       setReactions: (chatId, reactions) =>
@@ -372,3 +406,7 @@ export const selectCanWrite = (chatId: string) => (state: ChatState) => {
 
 export const selectIsAdmin = (chatId: string) => (state: ChatState) =>
   state.memberships[chatId] === "admin";
+
+const EMPTY_ATTACHMENTS: AttachmentWithUrl[] = [];
+export const selectAttachments = (chatId: string, messageId: string) => (state: ChatState) =>
+  state.attachments[chatId]?.[messageId] ?? EMPTY_ATTACHMENTS;

@@ -1,12 +1,12 @@
 "use client";
 
 import { Fragment, useMemo, useState, type ReactNode } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, FileText, Download, Film, Music } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useProfileStore } from "@/store/profileStore";
 import type { Message } from "@/db/schema";
-import type { ReactionGroup } from "@/store/chatStore";
+import type { ReactionGroup, AttachmentWithUrl } from "@/store/chatStore";
 
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🎉"];
 const FENCED_CODE_REGEX = /```([\w+-]*)\n?([\s\S]*?)```/g;
@@ -151,6 +151,75 @@ function renderMarkdownMessage(content: string, isOwn: boolean) {
   });
 }
 
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function AttachmentFileIcon({ mimeType }: { mimeType: string }) {
+  if (mimeType.startsWith("video/")) return <Film className="w-4 h-4 shrink-0" />;
+  if (mimeType.startsWith("audio/")) return <Music className="w-4 h-4 shrink-0" />;
+  return <FileText className="w-4 h-4 shrink-0" />;
+}
+
+function AttachmentGrid({ attachments, isOwn }: { attachments: AttachmentWithUrl[]; isOwn: boolean }) {
+  const images = attachments.filter((a) => a.mimeType.startsWith("image/"));
+  const files = attachments.filter((a) => !a.mimeType.startsWith("image/"));
+
+  return (
+    <div className="space-y-1.5">
+      {images.length > 0 && (
+        <div className={`grid gap-1 ${images.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
+          {images.map((att) => (
+            <a
+              key={att.id}
+              href={att.signedUrl ?? "#"}
+              target="_blank"
+              rel="noreferrer"
+              className="block rounded-lg overflow-hidden"
+            >
+              <img
+                src={att.signedUrl ?? ""}
+                alt={att.fileName}
+                loading="lazy"
+                className="w-full max-h-64 object-cover rounded-lg hover:opacity-90 transition-opacity"
+              />
+            </a>
+          ))}
+        </div>
+      )}
+      {files.length > 0 && (
+        <div className="space-y-1">
+          {files.map((att) => (
+            <a
+              key={att.id}
+              href={att.signedUrl ?? "#"}
+              target="_blank"
+              rel="noreferrer"
+              download={att.fileName}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                isOwn
+                  ? "bg-white/10 hover:bg-white/20 text-primary-foreground"
+                  : "bg-muted/60 hover:bg-muted border border-border/40"
+              }`}
+            >
+              <AttachmentFileIcon mimeType={att.mimeType} />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium truncate">{att.fileName}</p>
+                <p className={`text-[0.6rem] ${isOwn ? "text-primary-foreground/60" : "text-muted-foreground"}`}>
+                  {formatFileSize(att.fileSize)}
+                </p>
+              </div>
+              <Download className="w-3.5 h-3.5 shrink-0 opacity-50" />
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface MessageBubbleProps {
   msg: Message;
   isOwn: boolean;
@@ -159,6 +228,7 @@ interface MessageBubbleProps {
   parentMsg: Message | null;
   isHighlighted?: boolean;
   msgReactions?: ReactionGroup;
+  attachments?: AttachmentWithUrl[];
   /** Non-null when THIS message is being edited; holds current edit text */
   editContent: string | null;
   /** True when any message in the list is in edit mode */
@@ -188,6 +258,7 @@ export default function MessageBubble({
   parentMsg,
   isHighlighted = false,
   msgReactions,
+  attachments,
   editContent,
   isAnyEditing,
   isPickerOpen,
@@ -282,8 +353,15 @@ export default function MessageBubble({
             } ${isDeleted ? "opacity-40 italic" : ""}`}
             style={isOwn && accentChat ? { backgroundColor: accentChat } : undefined}
           >
+            {/* Attachments */}
+            {attachments && attachments.length > 0 && (
+              <div className={msg.content ? "mb-1.5" : ""}>
+                <AttachmentGrid attachments={attachments} isOwn={isOwn} />
+              </div>
+            )}
+
             <div className="flex items-end gap-1.5">
-              <div className="space-y-1 min-w-0">{renderedContent}</div>
+              <div className="space-y-1 min-w-0">{msg.content ? renderedContent : null}</div>
               <div className="flex items-center gap-1 shrink-0 self-end mb-0.5">
                 {isEdited && (
                   <span className="text-[0.55rem] opacity-50 font-medium uppercase tracking-wider">edited</span>

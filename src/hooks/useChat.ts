@@ -26,7 +26,7 @@ interface UseChatReturn {
 
   // Actions
   setActiveChat: (chatId: string | null) => void;
-  sendMessage: (content: string, parentId?: string) => Promise<void>;
+  sendMessage: (content: string, parentId?: string, files?: File[]) => Promise<void>;
   retrySend: (failedMessageId: string) => Promise<void>;
   editMessage: (messageId: string, content: string) => Promise<void>;
   deleteMessage: (messageId: string, mode?: "for_me" | "for_everyone") => Promise<void>;
@@ -133,6 +133,8 @@ export function useChat(): UseChatReturn {
     updateMessage,
     removeMessage,
     setReactions,
+    setAttachments,
+    addAttachments,
     addReaction: addReactionToStore,
     removeReaction: removeReactionFromStore,
     setMembership,
@@ -465,6 +467,7 @@ export function useChat(): UseChatReturn {
               normalizeMessages(data.messages).filter((m) => !deletedForMe.has(m.id))
             );
             setReactions(activeId, data.reactions ?? []);
+            if (data.attachments) setAttachments(activeId, data.attachments);
             setHasMore(activeId, data.hasMore ?? false);
           } else {
             setMessages(
@@ -582,11 +585,15 @@ export function useChat(): UseChatReturn {
           "broadcast",
           { event: "new-message" },
           (payload) => {
-            const msg = payload.payload as Message;
+            const msg = payload.payload as Message & { attachments?: unknown[] };
+            const { attachments: msgAttachments, ...rest } = msg;
             appendMessage(activeId, {
-              ...msg,
-              createdAt: new Date(msg.createdAt),
+              ...rest,
+              createdAt: new Date(rest.createdAt),
             });
+            if (msgAttachments?.length) {
+              useChatStore.getState().addAttachments(activeId, rest.id, msgAttachments as import("@/store/chatStore").AttachmentWithUrl[]);
+            }
           }
         )
         // Broadcast for message edits/deletes
@@ -660,8 +667,10 @@ export function useChat(): UseChatReturn {
   // --- Send message with optimistic update ---
 
   const sendMessage = useCallback(
-    async (content: string, parentId?: string) => {
-      if (!activeChatId || !canWrite || !content.trim()) return;
+    async (content: string, parentId?: string, files?: File[]) => {
+      if (!activeChatId || !canWrite) return;
+      const hasFiles = files && files.length > 0;
+      if (!content.trim() && !hasFiles) return;
 
       const optimisticMsg: Message = {
         id: `optimistic-${Date.now()}`,
@@ -678,11 +687,26 @@ export function useChat(): UseChatReturn {
       appendMessage(activeChatId, optimisticMsg);
 
       try {
-        const res = await fetch(`/api/chat/${activeChatId}/messages`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: content.trim(), parentId }),
-        });
+        let res: Response;
+
+        if (hasFiles) {
+          const formData = new FormData();
+          formData.append("content", content.trim());
+          if (parentId) formData.append("parentId", parentId);
+          for (const file of files) {
+            formData.append("files", file);
+          }
+          res = await fetch(`/api/chat/${activeChatId}/messages`, {
+            method: "POST",
+            body: formData,
+          });
+        } else {
+          res = await fetch(`/api/chat/${activeChatId}/messages`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: content.trim(), parentId }),
+          });
+        }
 
         if (!res.ok) throw new Error("Failed to send message");
 
@@ -699,11 +723,16 @@ export function useChat(): UseChatReturn {
             )
         );
 
+        // Store attachments if present
+        if (savedMsg.attachments?.length > 0) {
+          addAttachments(activeChatId, normalizedSavedMsg.id, savedMsg.attachments);
+        }
+
         // Broadcast to other clients on the same channel.
         channelRef.current?.send({
           type: "broadcast",
           event: "new-message",
-          payload: normalizedSavedMsg,
+          payload: { ...normalizedSavedMsg, attachments: savedMsg.attachments },
         });
       } catch {
         // Mark the optimistic entry as failed instead of removing it.
@@ -956,6 +985,7 @@ export function useChat(): UseChatReturn {
           activeChatId,
           normalizeMessages(data.messages).filter((m) => !deletedForMe.has(m.id))
         );
+        if (data.attachments) setAttachments(activeChatId, data.attachments);
       }
       setHasMore(activeChatId, data.hasMore ?? false);
     } catch {

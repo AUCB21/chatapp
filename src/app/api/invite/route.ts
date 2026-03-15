@@ -92,7 +92,7 @@ async function sendInviteEmailIfNeeded(email: string, origin: string) {
   if (!admin) return;
 
   const { error } = await admin.auth.admin.inviteUserByEmail(email, {
-    redirectTo: `${origin}/reset-password`,
+    redirectTo: `${origin}/auth/callback`,
   });
 
   if (error) {

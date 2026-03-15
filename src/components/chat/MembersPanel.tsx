@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   Sheet,
   SheetContent,
@@ -16,6 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Pencil } from "lucide-react";
 import type { MemberRole } from "@/db/schema";
 
 interface Member {
@@ -116,6 +117,50 @@ export default function MembersPanel({
     }
   }
 
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const editRef = useRef<HTMLInputElement>(null);
+
+  async function handleNicknameSave(userId: string) {
+    const trimmed = editValue.trim();
+    const member = members.find((m) => m.userId === userId);
+    if (!member) return;
+
+    // null clears the override, empty string also clears
+    const newName = trimmed || null;
+    if (newName === member.chatDisplayName) {
+      setEditingId(null);
+      return;
+    }
+
+    setActionLoading(userId);
+    try {
+      const res = await fetch(`/api/chat/${chatId}/profile`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, displayName: newName }),
+      });
+      if (res.ok) {
+        setMembers((prev) =>
+          prev.map((m) =>
+            m.userId === userId
+              ? {
+                  ...m,
+                  chatDisplayName: newName,
+                  displayName: newName ?? m.globalDisplayName ?? m.email.split("@")[0],
+                }
+              : m
+          )
+        );
+      }
+    } catch {
+      // silent
+    } finally {
+      setActionLoading(null);
+      setEditingId(null);
+    }
+  }
+
   async function handleRemove(userId: string) {
     setActionLoading(userId);
     try {
@@ -136,7 +181,7 @@ export default function MembersPanel({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-[20rem] sm:w-[22rem] p-0 flex flex-col">
+      <SheetContent side="right" className="w-[20rem] sm:w-88 p-0 flex flex-col">
         <SheetHeader className="px-4 pt-4 pb-3 border-b border-border">
           <SheetTitle className="text-sm font-semibold">
             Members{!loading && ` (${members.length})`}
@@ -158,6 +203,8 @@ export default function MembersPanel({
                 const isSelf = member.userId === currentUserId;
                 const badge = ROLE_BADGE[member.role];
                 const canManage = isAdmin && !isSelf;
+                const isEditing = editingId === member.userId;
+                const canEditNickname = isAdmin || isSelf;
 
                 return (
                   <li
@@ -173,15 +220,49 @@ export default function MembersPanel({
                     </Avatar>
 
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium truncate">
-                          {displayName}
-                          {isSelf && (
-                            <span className="text-muted-foreground font-normal"> (you)</span>
+                      {isEditing ? (
+                        <input
+                          ref={editRef}
+                          autoFocus
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={() => handleNicknameSave(member.userId)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleNicknameSave(member.userId);
+                            if (e.key === "Escape") setEditingId(null);
+                          }}
+                          placeholder={member.globalDisplayName ?? member.email.split("@")[0]}
+                          className="w-full text-sm font-medium bg-muted/60 border border-border rounded-md px-2 py-0.5 outline-none focus:ring-1 focus:ring-ring/40"
+                        />
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-medium truncate">
+                            {displayName}
+                            {isSelf && (
+                              <span className="text-muted-foreground font-normal"> (you)</span>
+                            )}
+                          </span>
+                          {canEditNickname && (
+                            <button
+                              onClick={() => {
+                                setEditingId(member.userId);
+                                setEditValue(member.chatDisplayName ?? "");
+                              }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                              title="Edit chat nickname"
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
                           )}
-                        </span>
-                      </div>
+                        </div>
+                      )}
                       <p className="text-[0.65rem] text-muted-foreground truncate">
+                        {member.chatDisplayName && (
+                          <span className="text-muted-foreground/60">
+                            {member.globalDisplayName ?? member.email.split("@")[0]}
+                            {" · "}
+                          </span>
+                        )}
                         {member.email}
                       </p>
                     </div>

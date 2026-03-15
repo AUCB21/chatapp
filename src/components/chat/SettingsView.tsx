@@ -40,6 +40,9 @@ export default function SettingsView({ onBack, onLogout, onDeleteAccount }: Sett
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleteModal, setDeleteModal] = useState(false);
+  const [passwordModal, setPasswordModal] = useState(false);
+  const [passwordSending, setPasswordSending] = useState(false);
+  const [passwordResult, setPasswordResult] = useState<{ type: "success" | "rate-limit" | "error"; message: string } | null>(null);
 
   // Local edit state for profile fields
   const [editUsername, setEditUsername] = useState(profile?.username ?? "");
@@ -76,16 +79,44 @@ export default function SettingsView({ onBack, onLogout, onDeleteAccount }: Sett
     }
   }, [updateProfileStore]);
 
-  const handlePasswordChange = useCallback(() => {
+  const handlePasswordChange = useCallback(async () => {
     if (!user?.email) return;
-    const supabase = getSupabase();
-    supabase.auth.resetPasswordForEmail(user.email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    }).then(() => {
-      alert("Password reset email sent. Check your inbox.");
-    }).catch(() => {
-      alert("Failed to send password reset email.");
-    });
+    setPasswordSending(true);
+    setPasswordResult(null);
+
+    const RATE_LIMIT_KEY = "password_reset_last_sent";
+    const RATE_LIMIT_SECONDS = 60;
+    const lastSent = parseInt(localStorage.getItem(RATE_LIMIT_KEY) ?? "0", 10);
+    const elapsed = Math.floor(Date.now() / 1000) - lastSent;
+
+    if (elapsed < RATE_LIMIT_SECONDS) {
+      const remaining = RATE_LIMIT_SECONDS - elapsed;
+      setPasswordResult({
+        type: "rate-limit",
+        message: `Please wait ${remaining}s before requesting another reset email.`,
+      });
+      setPasswordSending(false);
+      return;
+    }
+
+    try {
+      const supabase = getSupabase();
+      await supabase.auth.resetPasswordForEmail(user.email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      localStorage.setItem(RATE_LIMIT_KEY, String(Math.floor(Date.now() / 1000)));
+      setPasswordResult({
+        type: "success",
+        message: "Reset email sent! Check your inbox.",
+      });
+    } catch {
+      setPasswordResult({
+        type: "error",
+        message: "Failed to send reset email. Try again later.",
+      });
+    } finally {
+      setPasswordSending(false);
+    }
   }, [user?.email]);
 
   const displayName = profile?.displayName ?? user?.email?.split("@")[0] ?? "User";
@@ -292,7 +323,7 @@ export default function SettingsView({ onBack, onLogout, onDeleteAccount }: Sett
             icon={KeyRound}
             label="Change Password"
             sublabel="Send reset email"
-            onClick={handlePasswordChange}
+            onClick={() => { setPasswordResult(null); setPasswordModal(true); }}
           />
 
           <div className="h-px bg-sidebar-border mx-2 my-2" />
@@ -338,6 +369,66 @@ export default function SettingsView({ onBack, onLogout, onDeleteAccount }: Sett
           )}
         </div>
       </ScrollArea>
+
+      {/* Password reset confirmation modal */}
+      {passwordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setPasswordModal(false)}
+          />
+          <div className="relative z-10 w-[90vw] max-w-sm rounded-xl border border-border bg-card p-6 shadow-2xl space-y-4">
+            <div className="flex flex-col items-center gap-2 text-center">
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                <KeyRound className="w-6 h-6 text-primary" />
+              </div>
+              <h3 className="text-base font-semibold">Change Password</h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                A password reset link will be sent to{" "}
+                <span className="font-medium text-foreground">{user?.email}</span>.
+                You&apos;ll be redirected to set a new password.
+              </p>
+            </div>
+            {passwordResult && (
+              <div className={`text-xs px-3 py-2 rounded-lg border ${
+                passwordResult.type === "success"
+                  ? "text-emerald-600 bg-emerald-500/10 border-emerald-500/20"
+                  : passwordResult.type === "rate-limit"
+                    ? "text-amber-600 bg-amber-500/10 border-amber-500/20"
+                    : "text-destructive bg-destructive/10 border-destructive/20"
+              }`}>
+                {passwordResult.message}
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPasswordModal(false)}
+                disabled={passwordSending}
+                className="flex-1 text-sm py-2 rounded-lg border border-border bg-secondary text-secondary-foreground font-medium hover:opacity-80 transition-opacity disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePasswordChange}
+                disabled={passwordSending}
+                className="flex-1 text-sm py-2 rounded-lg bg-primary text-primary-foreground font-medium hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {passwordSending ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                    Sending…
+                  </>
+                ) : (
+                  "Send Reset Email"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Final confirmation modal */}
       {deleteModal && (

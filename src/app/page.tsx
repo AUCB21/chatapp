@@ -154,6 +154,7 @@ function ChatPage() {
   const skipAutoScrollRef = useRef(false);
 
   const unreadCounts = useChatStore((s) => s.unreadCounts);
+  const chatAttachments = useChatStore((s) => activeChatId ? s.attachments[activeChatId] : undefined);
   const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
 
   const reactionGrouped = groupReactions(reactions);
@@ -328,9 +329,9 @@ function ChatPage() {
     }
   }
 
-  async function handleSend(content: string) {
+  async function handleSend(content: string, files?: File[]) {
     stopTyping();
-    await sendMessage(content, replyTo?.id);
+    await sendMessage(content, replyTo?.id, files);
     setReplyTo(null);
   }
 
@@ -686,6 +687,7 @@ function ChatPage() {
                               parentMsg={parentMsg}
                               isHighlighted={highlightedMessageId === msg.id}
                               msgReactions={reactionGrouped[msg.id]}
+                              attachments={chatAttachments?.[msg.id]}
                               editContent={
                                 editingMessageId === msg.id
                                   ? editContent

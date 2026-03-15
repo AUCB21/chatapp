@@ -28,9 +28,28 @@ export const createChatSchema = z.object({
 });
 
 export const sendMessageSchema = z.object({
-  content: z.string().min(1).max(4000).trim(),
+  content: z.string().max(4000).trim().default(""),
   parentId: z.string().uuid().optional(),
 });
+
+// File upload constants
+export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+export const MAX_FILES_PER_MESSAGE = 10;
+export const ALLOWED_MIME_TYPES = new Set([
+  // Images
+  "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml",
+  // Documents
+  "application/pdf", "text/plain",
+  "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  // Media
+  "video/mp4", "video/webm", "audio/mpeg", "audio/ogg", "audio/webm",
+  // Code
+  "text/html", "text/css", "text/javascript", "application/javascript",
+  "application/json", "application/xml", "text/xml", "text/csv", "text/markdown",
+  "application/x-yaml", "application/x-httpd-php", "application/x-sh",
+  "application/x-python", "text/x-python",
+]);
 
 export const editMessageSchema = z.object({
   content: z.string().min(1).max(4000).trim(),

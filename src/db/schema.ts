@@ -219,6 +219,28 @@ export const callParticipants = pgTable(
 );
 
 /**
+ * attachments: files/images attached to messages.
+ * Stored in Supabase Storage bucket "chat-attachments".
+ */
+export const attachments = pgTable(
+  "attachments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    storagePath: text("storage_path").notNull(),
+    fileName: text("file_name").notNull(),
+    fileSize: integer("file_size").notNull(),
+    mimeType: text("mime_type").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    messageIdx: index("attachments_message_idx").on(t.messageId),
+  })
+);
+
+/**
  * chat_user_profiles: per-chat display name / avatar overrides.
  * Falls back to global user_profiles when not set.
  */
@@ -270,6 +292,7 @@ export type Chat = typeof chats.$inferSelect;
 export type Membership = typeof memberships.$inferSelect;
 export type Message = typeof messages.$inferSelect;
 export type ChatUserProfile = typeof chatUserProfiles.$inferSelect;
+export type Attachment = typeof attachments.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
 export type ReadReceipt = typeof readReceipts.$inferSelect;
 export type Reaction = typeof reactions.$inferSelect;

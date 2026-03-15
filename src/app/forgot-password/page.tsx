@@ -16,12 +16,23 @@ export default function ForgotPasswordPage() {
     setLoading(true);
 
     try {
-      // Call Supabase directly from the browser so window.location.origin
-      // is used as the base — guarantees the correct redirectTo URL.
+      const RATE_LIMIT_KEY = "password_reset_last_sent";
+      const RATE_LIMIT_SECONDS = 60;
+      const lastSent = parseInt(localStorage.getItem(RATE_LIMIT_KEY) ?? "0", 10);
+      const elapsed = Math.floor(Date.now() / 1000) - lastSent;
+
+      if (elapsed < RATE_LIMIT_SECONDS) {
+        const remaining = RATE_LIMIT_SECONDS - elapsed;
+        setError(`Please wait ${remaining}s before requesting another reset email.`);
+        setLoading(false);
+        return;
+      }
+
       const supabase = getSupabase();
       await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
+      localStorage.setItem(RATE_LIMIT_KEY, String(Math.floor(Date.now() / 1000)));
 
       setSent(true);
     } catch {
