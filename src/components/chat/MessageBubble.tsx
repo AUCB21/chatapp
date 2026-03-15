@@ -1,11 +1,60 @@
 "use client";
 
 import { Fragment, memo, useMemo, useState, type ReactNode } from "react";
-import { Pencil, Trash2, FileText, Download, Film, Music } from "lucide-react";
+import { Pencil, Trash2, FileText, Download, Film, Music, MessageSquare } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { Message } from "@/db/schema";
 import type { ReactionGroup, AttachmentWithUrl, ReadReceiptEntry } from "@/store/chatStore";
+
+import hljs from "highlight.js/lib/core";
+import javascript from "highlight.js/lib/languages/javascript";
+import typescript from "highlight.js/lib/languages/typescript";
+import python from "highlight.js/lib/languages/python";
+import go from "highlight.js/lib/languages/go";
+import rust from "highlight.js/lib/languages/rust";
+import java from "highlight.js/lib/languages/java";
+import xml from "highlight.js/lib/languages/xml";
+import css from "highlight.js/lib/languages/css";
+import json from "highlight.js/lib/languages/json";
+import bash from "highlight.js/lib/languages/bash";
+import sql from "highlight.js/lib/languages/sql";
+import c from "highlight.js/lib/languages/c";
+import cpp from "highlight.js/lib/languages/cpp";
+import csharp from "highlight.js/lib/languages/csharp";
+import ruby from "highlight.js/lib/languages/ruby";
+import php from "highlight.js/lib/languages/php";
+import yaml from "highlight.js/lib/languages/yaml";
+import markdown from "highlight.js/lib/languages/markdown";
+import diff from "highlight.js/lib/languages/diff";
+import "highlight.js/styles/github-dark.css";
+
+hljs.registerLanguage("javascript", javascript);
+hljs.registerLanguage("js", javascript);
+hljs.registerLanguage("typescript", typescript);
+hljs.registerLanguage("ts", typescript);
+hljs.registerLanguage("python", python);
+hljs.registerLanguage("py", python);
+hljs.registerLanguage("go", go);
+hljs.registerLanguage("rust", rust);
+hljs.registerLanguage("java", java);
+hljs.registerLanguage("html", xml);
+hljs.registerLanguage("xml", xml);
+hljs.registerLanguage("css", css);
+hljs.registerLanguage("json", json);
+hljs.registerLanguage("bash", bash);
+hljs.registerLanguage("sh", bash);
+hljs.registerLanguage("sql", sql);
+hljs.registerLanguage("c", c);
+hljs.registerLanguage("cpp", cpp);
+hljs.registerLanguage("csharp", csharp);
+hljs.registerLanguage("ruby", ruby);
+hljs.registerLanguage("php", php);
+hljs.registerLanguage("yaml", yaml);
+hljs.registerLanguage("yml", yaml);
+hljs.registerLanguage("markdown", markdown);
+hljs.registerLanguage("md", markdown);
+hljs.registerLanguage("diff", diff);
 
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🎉"];
 const FENCED_CODE_REGEX = /```([\w+-]*)\n?([\s\S]*?)```/g;
@@ -98,6 +147,120 @@ function renderRawUrls(text: string, keyPrefix: string, linkClassName: string): 
   });
 }
 
+/** Process bold, italic, strikethrough in a plain-text string (no inline code). */
+function renderInlineFormatting(text: string, keyPrefix: string, linkClassName: string): ReactNode[] {
+  // Combined regex: bold (**), strikethrough (~~), italic (* or _ but not mid-word _)
+  const INLINE_FMT = /(\*\*(.+?)\*\*|~~(.+?)~~|(?<!\w)\*(.+?)\*(?!\w)|(?<!\w)_(.+?)_(?!\w))/g;
+
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(INLINE_FMT)) {
+    const idx = match.index ?? 0;
+    if (idx > lastIndex) {
+      nodes.push(...renderLinks(text.slice(lastIndex, idx), `${keyPrefix}-p-${idx}`, linkClassName));
+    }
+
+    const key = `${keyPrefix}-fmt-${idx}`;
+    if (match[2] != null) {
+      // bold
+      nodes.push(<strong key={key}>{renderLinks(match[2], key, linkClassName)}</strong>);
+    } else if (match[3] != null) {
+      // strikethrough
+      nodes.push(<s key={key}>{renderLinks(match[3], key, linkClassName)}</s>);
+    } else {
+      // italic (* or _)
+      const content = match[4] ?? match[5] ?? "";
+      nodes.push(<em key={key}>{renderLinks(content, key, linkClassName)}</em>);
+    }
+
+    lastIndex = idx + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(...renderLinks(text.slice(lastIndex), `${keyPrefix}-tail`, linkClassName));
+  }
+
+  return nodes;
+}
+
+const BULLET_RE = /^[-*] (.+)$/;
+const ORDERED_RE = /^\d+\. (.+)$/;
+
+/** Render a text segment, splitting into list blocks and inline-formatted paragraphs. */
+function renderTextSegment(text: string, keyPrefix: string, isOwn: boolean): ReactNode[] {
+  const linkClassName = isOwn
+    ? "underline underline-offset-2 break-all text-primary-foreground/80 hover:text-primary-foreground"
+    : "underline underline-offset-2 break-all text-primary hover:text-primary/80";
+
+  const lines = text.split("\n");
+  const result: ReactNode[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    // Check for bullet list
+    if (BULLET_RE.test(lines[i])) {
+      const items: ReactNode[] = [];
+      while (i < lines.length && BULLET_RE.test(lines[i])) {
+        const content = lines[i].match(BULLET_RE)![1];
+        items.push(
+          <li key={`${keyPrefix}-bli-${i}`} className="text-sm">
+            {renderMarkdownText(content, `${keyPrefix}-bl-${i}`, isOwn)}
+          </li>
+        );
+        i++;
+      }
+      result.push(
+        <ul key={`${keyPrefix}-ul-${i}`} className="list-disc pl-4 space-y-0.5">
+          {items}
+        </ul>
+      );
+      continue;
+    }
+
+    // Check for ordered list
+    if (ORDERED_RE.test(lines[i])) {
+      const items: ReactNode[] = [];
+      while (i < lines.length && ORDERED_RE.test(lines[i])) {
+        const content = lines[i].match(ORDERED_RE)![1];
+        items.push(
+          <li key={`${keyPrefix}-oli-${i}`} className="text-sm">
+            {renderMarkdownText(content, `${keyPrefix}-ol-${i}`, isOwn)}
+          </li>
+        );
+        i++;
+      }
+      result.push(
+        <ol key={`${keyPrefix}-ol-${i}`} className="list-decimal pl-4 space-y-0.5">
+          {items}
+        </ol>
+      );
+      continue;
+    }
+
+    // Regular line — collect consecutive non-list lines
+    const startI = i;
+    const normalLines: string[] = [];
+    while (i < lines.length && !BULLET_RE.test(lines[i]) && !ORDERED_RE.test(lines[i])) {
+      normalLines.push(lines[i]);
+      i++;
+    }
+    const joined = normalLines.join("\n");
+    if (joined) {
+      result.push(
+        <Fragment key={`${keyPrefix}-txt-${startI}`}>
+          {renderMarkdownText(joined, `${keyPrefix}-t-${startI}`, isOwn)}
+        </Fragment>
+      );
+    } else {
+      // Empty line (newline preserved by whitespace-pre-wrap)
+      result.push(<Fragment key={`${keyPrefix}-nl-${startI}`}>{"\n"}</Fragment>);
+    }
+  }
+
+  return result;
+}
+
 function renderMarkdownText(text: string, keyPrefix: string, isOwn: boolean): ReactNode[] {
   const linkClassName = isOwn
     ? "underline underline-offset-2 break-all text-primary-foreground/80 hover:text-primary-foreground"
@@ -119,13 +282,30 @@ function renderMarkdownText(text: string, keyPrefix: string, isOwn: boolean): Re
       );
     }
 
-    return <Fragment key={key}>{renderLinks(part, key, linkClassName)}</Fragment>;
+    return <Fragment key={key}>{renderInlineFormatting(part, key, linkClassName)}</Fragment>;
   });
+}
+
+function highlightCode(code: string, language?: string): string {
+  try {
+    if (language) {
+      return hljs.highlight(code, { language }).value;
+    }
+  } catch {
+    // language not registered, fall through to auto
+  }
+  try {
+    return hljs.highlightAuto(code).value;
+  } catch {
+    // fallback to plain text
+    return code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
 }
 
 function renderMarkdownMessage(content: string, isOwn: boolean) {
   return splitMarkdownMessage(content).map((segment, index) => {
     if (segment.type === "code") {
+      const highlighted = highlightCode(segment.value, segment.language);
       return (
         <div key={`code-${index}`} className="my-2 overflow-hidden rounded-xl border border-border/60 text-left">
           {segment.language && (
@@ -133,10 +313,13 @@ function renderMarkdownMessage(content: string, isOwn: boolean) {
               {segment.language}
             </div>
           )}
-          <pre className={`overflow-x-auto px-3 py-2.5 text-[0.75rem] ${
+          <pre className={`hljs overflow-x-auto px-3 py-2.5 text-[0.75rem] ${
             isOwn ? "bg-black/20 text-white/90" : "bg-muted/30 text-foreground"
           }`}>
-            <code className="font-mono whitespace-pre">{segment.value}</code>
+            <code
+              className="font-mono whitespace-pre"
+              dangerouslySetInnerHTML={{ __html: highlighted }}
+            />
           </pre>
         </div>
       );
@@ -144,7 +327,7 @@ function renderMarkdownMessage(content: string, isOwn: boolean) {
 
     return (
       <span key={`text-${index}`} className="whitespace-pre-wrap wrap-break-word">
-        {renderMarkdownText(segment.value, `segment-${index}`, isOwn)}
+        {renderTextSegment(segment.value, `segment-${index}`, isOwn)}
       </span>
     );
   });
@@ -162,21 +345,35 @@ function AttachmentFileIcon({ mimeType }: { mimeType: string }) {
   return <FileText className="w-4 h-4 shrink-0" />;
 }
 
-function AttachmentGrid({ attachments, isOwn }: { attachments: AttachmentWithUrl[]; isOwn: boolean }) {
+function AttachmentGrid({
+  attachments,
+  isOwn,
+  onMediaClick,
+}: {
+  attachments: AttachmentWithUrl[];
+  isOwn: boolean;
+  onMediaClick?: (src: string, mimeType: string, fileName: string) => void;
+}) {
   const images = attachments.filter((a) => a.mimeType.startsWith("image/"));
   const files = attachments.filter((a) => !a.mimeType.startsWith("image/"));
+
+  const mediaFiles = files.filter(
+    (a) => a.mimeType.startsWith("video/") || a.mimeType.startsWith("audio/")
+  );
+  const otherFiles = files.filter(
+    (a) => !a.mimeType.startsWith("video/") && !a.mimeType.startsWith("audio/")
+  );
 
   return (
     <div className="space-y-1.5">
       {images.length > 0 && (
         <div className={`grid gap-1 ${images.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
           {images.map((att) => (
-            <a
+            <button
+              type="button"
               key={att.id}
-              href={att.signedUrl ?? "#"}
-              target="_blank"
-              rel="noreferrer"
-              className="block rounded-lg overflow-hidden"
+              onClick={() => onMediaClick?.(att.signedUrl ?? "", att.mimeType, att.fileName)}
+              className="block rounded-lg overflow-hidden cursor-pointer text-left"
             >
               <img
                 src={att.signedUrl ?? ""}
@@ -184,13 +381,37 @@ function AttachmentGrid({ attachments, isOwn }: { attachments: AttachmentWithUrl
                 loading="lazy"
                 className="w-full max-h-64 object-cover rounded-lg hover:opacity-90 transition-opacity"
               />
-            </a>
+            </button>
           ))}
         </div>
       )}
-      {files.length > 0 && (
+      {mediaFiles.length > 0 && (
         <div className="space-y-1">
-          {files.map((att) => (
+          {mediaFiles.map((att) => (
+            <button
+              type="button"
+              key={att.id}
+              onClick={() => onMediaClick?.(att.signedUrl ?? "", att.mimeType, att.fileName)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors w-full text-left cursor-pointer ${
+                isOwn
+                  ? "bg-white/10 hover:bg-white/20 text-primary-foreground"
+                  : "bg-muted/60 hover:bg-muted border border-border/40"
+              }`}
+            >
+              <AttachmentFileIcon mimeType={att.mimeType} />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium truncate">{att.fileName}</p>
+                <p className={`text-[0.6rem] ${isOwn ? "text-primary-foreground/60" : "text-muted-foreground"}`}>
+                  {formatFileSize(att.fileSize)}
+                </p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+      {otherFiles.length > 0 && (
+        <div className="space-y-1">
+          {otherFiles.map((att) => (
             <a
               key={att.id}
               href={att.signedUrl ?? "#"}
@@ -249,6 +470,9 @@ interface MessageBubbleProps {
   onDeleteForEveryone: () => void;
   /** Readers (other than the sender) who have seen this message */
   seenBy?: ReadReceiptEntry[];
+  onMediaClick?: (src: string, mimeType: string, fileName: string) => void;
+  replyCount?: number;
+  onViewThread?: () => void;
 }
 
 function MessageBubble({
@@ -278,6 +502,9 @@ function MessageBubble({
   onDeleteForMe,
   onDeleteForEveryone,
   seenBy,
+  onMediaClick,
+  replyCount,
+  onViewThread,
 }: MessageBubbleProps) {
   const [deletePickerOpen, setDeletePickerOpen] = useState(false);
   const isFailed = msg.id.startsWith("failed-");
@@ -356,7 +583,7 @@ function MessageBubble({
             {/* Attachments */}
             {attachments && attachments.length > 0 && (
               <div className={msg.content ? "mb-1.5" : ""}>
-                <AttachmentGrid attachments={attachments} isOwn={isOwn} />
+                <AttachmentGrid attachments={attachments} isOwn={isOwn} onMediaClick={onMediaClick} />
               </div>
             )}
 
@@ -429,6 +656,17 @@ function MessageBubble({
                     title="Reply"
                   >
                     <span className="text-sm">↩</span>
+                  </button>
+                )}
+
+                {/* View thread */}
+                {replyCount && replyCount > 0 && onViewThread && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onViewThread(); onSetPickerOpen(false); }}
+                    className="w-7 h-7 rounded-lg hover:bg-muted transition-colors flex items-center justify-center text-muted-foreground"
+                    title="View thread"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
                   </button>
                 )}
 
@@ -530,6 +768,19 @@ function MessageBubble({
               );
             })}
           </div>
+        )}
+
+        {/* Thread indicator */}
+        {replyCount && replyCount > 0 && onViewThread && (
+          <button
+            onClick={onViewThread}
+            className={`flex items-center gap-1 mt-0.5 px-2 text-[0.65rem] text-primary hover:underline ${
+              isOwn ? "ml-auto" : ""
+            }`}
+          >
+            <MessageSquare className="w-3 h-3" />
+            {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
+          </button>
         )}
 
         {/* Seen by — shown only on own messages when others have read past it */}

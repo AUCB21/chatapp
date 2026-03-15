@@ -135,14 +135,14 @@
 
 ## 🟡 Medium Priority — UX polish & content features
 
-6. **39. Members Panel Pagination**
-   Members list loads all members at once. Add cursor-based pagination for groups with many members.
+### ~~39. Members Panel Pagination~~ DONE
+~~Members list loads all members at once.~~ Cursor-based pagination (20 per page) added to `getChatMembersPaginated` backend query and `GET /api/chat/[chatId]/members?limit=&cursor=`. MembersPanel fetches page-by-page with a "Load more" button. Backward-compatible (no params = all members).
 
-7. **40. Image/Video Inline Preview**
-   Images open as raw signed URLs. Add a lightbox overlay for image viewing and inline `<video>`/`<audio>` players for media attachments.
+### ~~40. Image/Video Inline Preview~~ DONE
+~~Images open as raw signed URLs.~~ `MediaLightbox` overlay component: images in full-screen modal (`max-h-[90vh]`), inline `<video controls>` for video, `<audio controls>` for audio. Close via X, backdrop click, or Escape. Non-media files keep download behavior.
 
-8. **41. Markdown & Code Highlighting**
-   Messages render as plain text. Add markdown parsing (bold, italic, links, lists) and syntax-highlighted code blocks using a lightweight library.
+### ~~41. Markdown & Code Highlighting~~ DONE
+~~Messages render as plain text.~~ Added `**bold**`, `*italic*`, `~~strikethrough~~`, bullet lists (`- `/`* `), numbered lists (`1. `), and syntax-highlighted fenced code blocks via `highlight.js` (20 languages registered). `github-dark` theme for code. All rendering defined outside component to avoid re-render overhead.
 
 ### ~~42. Add Members After Creation~~ DONE
 ~~No way to invite new members to an existing group chat.~~ Admin-only `+` button in MembersPanel header opens an inline invite-by-email form. If the user has an account they are added directly as a write member (`POST /api/chat/[chatId]/invite`); if not, an invitation record is created and a signup email is sent. Member list auto-refreshes on success.
@@ -160,14 +160,14 @@
 12. **45. Block/Mute Users**
     No user-level blocking. Requires new schema, API, and client-side message filtering for blocked users.
 
-13. **46. Keyboard Shortcuts**
-    No keyboard navigation. Add `Cmd+K` / `Ctrl+K` for search, `@mention` autocomplete, and chat navigation shortcuts.
+### ~~46. Keyboard Shortcuts~~ DONE
+~~No keyboard navigation.~~ `useKeyboardShortcuts` hook: `Ctrl/Cmd+K` toggles search, `Escape` exits search, `Alt+↑/↓` navigates between chats in sidebar.
 
 14. **47. Full-Text Message Search**
     Search box exists but only filters client-side. Add a backend `tsvector`/`tsquery` full-text search index and search results UI with message jumping. Benefits from keyboard shortcut (#46) for discovery.
 
-15. **48. Thread View**
-    Schema supports `parentId` for replies but there's no expandable thread UI. Add a thread panel/drawer that shows the full reply chain for a message.
+### ~~48. Thread View~~ DONE
+~~Schema supports `parentId` for replies but there's no expandable thread UI.~~ `ThreadPanel` right-side Sheet shows full reply chain for a message. Root message displayed at top, replies chronologically below, with inline reply input. Thread indicator ("N replies") shown below messages with replies. "View thread" button in hover action bar.
 
 16. **49. Call Flow Completion**
     Voice call hooks and modal exist but the accept/reject/missed-call flow is incomplete. Finish WebRTC signaling, ringtone, and multi-screen call UI.

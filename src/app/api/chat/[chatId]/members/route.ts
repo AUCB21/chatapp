@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { getAuthUser } from "@/lib/supabaseServer";
-import { getUserRole, getChatMembers, addMember, removeMember } from "@/db/queries/memberships";
+import { getUserRole, getChatMembers, getChatMembersPaginated, addMember, removeMember } from "@/db/queries/memberships";
 import { addMemberSchema, updateMemberSchema } from "@/lib/validation";
 import {
   ok,
@@ -17,7 +17,7 @@ type Params = { params: Promise<{ chatId: string }> };
  * GET /api/chat/[chatId]/members
  * Returns all members of the chat with roles and emails.
  */
-export async function GET(_req: NextRequest, { params }: Params) {
+export async function GET(req: NextRequest, { params }: Params) {
   const user = await getAuthUser();
   if (!user) return unauthorized();
 
@@ -26,6 +26,16 @@ export async function GET(_req: NextRequest, { params }: Params) {
   try {
     const role = await getUserRole(user.id, chatId);
     if (!role) return forbidden();
+
+    const { searchParams } = new URL(req.url);
+    const limitParam = searchParams.get("limit");
+    const cursorParam = searchParams.get("cursor");
+
+    if (limitParam) {
+      const limit = Math.min(Math.max(parseInt(limitParam, 10) || 20, 1), 100);
+      const result = await getChatMembersPaginated(chatId, limit, cursorParam ?? undefined);
+      return ok({ members: result.members, nextCursor: result.nextCursor });
+    }
 
     const members = await getChatMembers(chatId);
     return ok({ members });

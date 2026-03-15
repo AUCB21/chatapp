@@ -79,15 +79,18 @@ export default function MembersPanel({
 }: MembersPanelProps) {
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const isAdmin = currentUserRole === "admin";
 
   const fetchMembers = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/chat/${chatId}/members`);
+      const res = await fetch(`/api/chat/${chatId}/members?limit=20`);
       if (res.ok) {
         const { data } = await res.json();
         setMembers(data.members);
+        setNextCursor(data.nextCursor ?? null);
       }
     } catch {
       // silent
@@ -95,6 +98,25 @@ export default function MembersPanel({
       setLoading(false);
     }
   }, [chatId]);
+
+  const fetchMoreMembers = useCallback(async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const res = await fetch(
+        `/api/chat/${chatId}/members?limit=20&cursor=${encodeURIComponent(nextCursor)}`
+      );
+      if (res.ok) {
+        const { data } = await res.json();
+        setMembers((prev) => [...prev, ...data.members]);
+        setNextCursor(data.nextCursor ?? null);
+      }
+    } catch {
+      // silent
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [chatId, nextCursor, loadingMore]);
 
   useEffect(() => {
     if (open) fetchMembers();
@@ -271,6 +293,7 @@ export default function MembersPanel({
               </svg>
             </div>
           ) : (
+            <>
             <ul className="py-1">
               {members.map((member) => {
                 const displayName = member.displayName;
@@ -400,6 +423,24 @@ export default function MembersPanel({
                 );
               })}
             </ul>
+            {nextCursor && (
+              <div className="flex justify-center py-3">
+                <button
+                  onClick={fetchMoreMembers}
+                  disabled={loadingMore}
+                  className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 rounded-md transition-colors disabled:opacity-50"
+                >
+                  {loadingMore ? (
+                    <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                  ) : null}
+                  {loadingMore ? "Loading..." : "Load more"}
+                </button>
+              </div>
+            )}
+            </>
           )}
         </div>
 

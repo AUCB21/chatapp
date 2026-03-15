@@ -11,6 +11,7 @@ import { useSessionStore } from "@/store/sessionStore";
 import { groupReactions, useChatStore, selectActiveReadReceipts } from "@/store/chatStore";
 import { useProfileStore, selectIsDnd, selectProfileStatus } from "@/store/profileStore";
 import { unlockAudio } from "@/lib/sounds";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useScreenShare } from "@/hooks/useScreenShare";
 import { useVoiceCall } from "@/hooks/useVoiceCall";
 import NewChatModal from "@/components/NewChatModal";
@@ -24,10 +25,12 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import ChatSidebar from "@/components/chat/ChatSidebar";
 import ChatHeader from "@/components/chat/ChatHeader";
 import MessageBubble from "@/components/chat/MessageBubble";
+import MediaLightbox from "@/components/chat/MediaLightbox";
 import MessageInput from "@/components/chat/MessageInput";
 import PendingPrompt from "@/components/chat/PendingPrompt";
 import EmptyChatState from "@/components/chat/EmptyChatState";
 import MembersPanel from "@/components/chat/MembersPanel";
+import ThreadPanel from "@/components/chat/ThreadPanel";
 import { useConnectionStatus } from "@/hooks/useConnectionStatus";
 import { useMutedChats } from "@/hooks/useMutedChats";
 import { supabase } from "@/lib/supabaseClient";
@@ -146,6 +149,8 @@ function ChatPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [membersOpen, setMembersOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [lightboxMedia, setLightboxMedia] = useState<{src: string; mimeType: string; fileName: string} | null>(null);
+  const [threadRootId, setThreadRootId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -166,6 +171,21 @@ function ChatPage() {
   const activeChat = useMemo(() => chats.find((c) => c.id === activeChatId) ?? null, [chats, activeChatId]);
   const isPending = activeChat?.role === "pending";
   const isDeclined = activeChat?.role === "declined";
+
+  // Thread support: reply counts per message
+  const replyCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const m of messages) {
+      if (m.parentId) counts[m.parentId] = (counts[m.parentId] ?? 0) + 1;
+    }
+    return counts;
+  }, [messages]);
+
+  const threadRoot = threadRootId ? messages.find(m => m.id === threadRootId) ?? null : null;
+  const threadReplies = useMemo(
+    () => threadRootId ? messages.filter(m => m.parentId === threadRootId) : [],
+    [messages, threadRootId]
+  );
 
   /* ── Idle detection (Discord-style) ── */
   const onIdle = useCallback(() => {
@@ -193,6 +213,19 @@ function ChatPage() {
   }, []);
 
   useIdleDetector(onIdle, onActive, profileStatus !== "dnd");
+
+  useKeyboardShortcuts({
+    onToggleSearch: () => setSearchMode((m) => !m),
+    onEscapeSearch: () => { setSearchMode(false); setSearchQuery(""); },
+    onNavigateChat: (direction) => {
+      const currentIndex = chats.findIndex((c) => c.id === activeChatId);
+      const nextIndex = direction === 'up'
+        ? Math.max(0, currentIndex - 1)
+        : Math.min(chats.length - 1, currentIndex + 1);
+      if (chats[nextIndex]) setActiveChat(chats[nextIndex].id);
+    },
+    isSearchMode: searchMode,
+  });
 
   /* ── Effects ── */
 
@@ -423,6 +456,10 @@ function ChatPage() {
     }
   }
 
+
+  const handleMediaClick = useCallback((src: string, mimeType: string, fileName: string) => {
+    setLightboxMedia({ src, mimeType, fileName });
+  }, []);
 
   const handleSelectChat = useCallback((chatId: string) => {
     setActiveChat(chatId);
@@ -760,6 +797,9 @@ function ChatPage() {
                               onDeleteForMe={() => handleDelete(msg.id, "for_me")}
                               onDeleteForEveryone={() => handleDelete(msg.id, "for_everyone")}
                               seenBy={seenByMap[msg.id]}
+                              onMediaClick={handleMediaClick}
+                              replyCount={replyCounts[msg.id]}
+                              onViewThread={() => setThreadRootId(msg.id)}
                             />
                           </div>
                         );
@@ -897,6 +937,15 @@ function ChatPage() {
         />
       )}
 
+      <ThreadPanel
+        open={!!threadRootId}
+        onOpenChange={(open) => { if (!open) setThreadRootId(null); }}
+        rootMessage={threadRoot}
+        replies={threadReplies}
+        userId={user?.id ?? ""}
+        onReply={(content) => sendMessage(content, threadRootId ?? undefined)}
+      />
+
       <NewChatModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
@@ -934,6 +983,13 @@ function ChatPage() {
         shareStatus={shareStatus}
         onStartSharing={startSharing}
         onStopSharing={stopSharing}
+      />
+
+      <MediaLightbox
+        src={lightboxMedia?.src ?? null}
+        mimeType={lightboxMedia?.mimeType ?? ""}
+        fileName={lightboxMedia?.fileName ?? ""}
+        onClose={() => setLightboxMedia(null)}
       />
     </div>
   );
