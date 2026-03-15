@@ -97,54 +97,80 @@
 ### ~~32. Password Strength Validator~~ DONE
 ~~No password strength enforcement.~~ `PASSWORD_RULES` array with real-time UI checklist on register and reset-password pages. Minimum 10 chars, uppercase, lowercase, special character. Shared `passwordSchema` Zod validator.
 
----
+### ~~50. Performance: Memoization & Re-render Reduction~~ DONE
+~~No memoization on computed values or stable references for callbacks.~~ Applied `useMemo` to `reactionGrouped`, `activeChat`, `totalUnread`, `displayMessages` (search filter), and the `chatAttachments` Zustand selector. Wrapped all event handlers in `page.tsx` with `useCallback`. Wrapped `MessageBubble`, `ChatSidebar`, `ChatHeader`, and `MessageInput` with `React.memo` to skip re-renders when their props are unchanged. Added `selectProfileStatus` stable selector to `profileStore`. Added in-flight deduplication guard to `refreshChats` in `useChat.ts` to prevent parallel duplicate chat-list fetches triggered by concurrent Realtime events.
 
-## 🔴 High Priority — Users will hit these immediately
+### ~~51. Optimistic UI Across All Actions~~ DONE
+~~Many buttons waited for API response before updating UI.~~ All selectors/buttons now update visually immediately (optimistic): profile fields, status, accent colors, chat rename, role changes, nickname edits, member removal, and chat deletion. API calls fire in the background. Color picker now uses draft/persisted state with Save/Revert buttons so live preview is decoupled from server state.
 
-### Dependency-First Execution Order
-1) **16** File/image sharing MVP
-2) **11** Storage hardening gate before production rollout of 16
+### ~~52. Global CSS Accent Color System~~ DONE
+~~Accent colors were applied per-component via inline styles.~~ `AccentColorProvider` overrides CSS theme variables (`--background`, `--foreground`, `--card-foreground`, `--primary`) directly on `:root`, so all Tailwind classes pick them up automatically. Live preview works globally (chat bubbles, background, font) with smooth CSS transitions. Surface layers (card, popover, sidebar) use alpha opacity for a frosted glass feel. Settings rendered as a Sheet overlay so the chat stays visible during color preview.
 
-### 16. File / Image Sharing
-The `<Paperclip>` button is rendered but does nothing. Implement file/image sharing with a single storage provider and attachment metadata in DB. Blocked by item 11 for production hardening.
+### ~~16. File / Image Sharing~~ DONE
+~~The `<Paperclip>` button is rendered but does nothing.~~ Full file/image sharing via Supabase Storage. FormData upload (max 10 files, 10 MB each), MIME allowlist, `attachments` table with cascade delete, signed URLs (5-min TTL), drag-and-drop, image thumbnails + file cards in MessageBubble, realtime broadcast, storage cleanup on message deletion. ⚠️ Requires migration `0014_attachments.sql` on Supabase + `chat-attachments` private bucket.
 
-**Recommended approach (MVP):** use one provider only (Supabase Storage) for now; delete the extra S3 bucket unless there is a strong non-functional requirement to keep it.
-
-- Phase 0 — Storage decision (required): choose exactly one provider for upload/read/delete paths and remove the unused one.
-- Phase 1 — DB contract: add `attachments` table linked to `messages` with `message_id`, `uploader_user_id`, `storage_provider`, `storage_key`, `original_name`, `mime_type`, `size_bytes`, optional `width`/`height`, and `created_at`.
-- Phase 1 — DB integrity: add indexes on `message_id` and `uploader_user_id`; cascade delete on `message_id`.
-- Phase 2 — Upload API: implement server-authenticated upload flow (presigned URL or proxy upload), then store attachment metadata in DB.
-- Phase 2 — Read API: return signed read URLs (short TTL), never expose raw bucket paths/public objects.
-- Phase 3 — Message API: support text+attachment and attachment-only messages consistently.
-- Phase 4 — UI composer: wire `Paperclip` to file picker, show upload progress/error, and prevent send until upload result is known.
-- Phase 4 — UI rendering: show image previews in `MessageBubble`, and file cards for non-image attachments.
-- Phase 5 — Realtime/store: include attachments in optimistic messages, fetch, retry, and pagination payloads.
-- Phase 6 — Deletion behavior: decide and implement whether message deletion also deletes storage objects immediately or via cleanup jobs.
-- Phase 7 — Production gate: ship behind a feature flag, then complete item 11 before enabling broadly.
-
-### 11. Per-User Storage Hardening (Prerequisite for production rollout)
-After item 16 works in staging, harden the chosen storage provider before production rollout.
-
-- Provider scope: enforce single-provider policy in code/config so uploads cannot drift across multiple buckets/providers.
-- Access model: private objects only; read access via signed URLs from server APIs.
-- Path convention: enforce deterministic keys, e.g. `chat/<chatId>/user/<userId>/<yyyy>/<mm>/<uuid>-<safeName>`.
-- AuthZ checks: uploader/downloader must be a member of the target chat at request time.
-- Validation policy: strict MIME allowlist, max file size, and optional dimension caps for images.
-- Signed URL policy: short TTL (1–5 min), with refresh-on-demand for older messages.
-- Quotas and limits: per-file, per-user, and optional per-chat usage limits with explicit API errors.
-- Abuse controls: optional scanning/quarantine workflow for suspicious content before it becomes visible.
-- Cleanup jobs: remove orphaned objects, failed-temp uploads, and (if chosen) files from deleted messages.
-- Auditability: log upload/read/delete events with userId/chatId/storageKey for incident response.
-- Release gate: keep item 16 behind a flag until hardening checks are validated in staging.
+### ~~11. Per-User Storage Hardening~~ DONE (partial)
+~~Harden storage before production rollout.~~ Private bucket, signed URLs with 5-min TTL, server-proxy uploads via service role key (no client-side bucket access), strict MIME allowlist, file size limits, storage cleanup on message deletion. Remaining: per-user quotas, abuse scanning, audit logging.
 
 ---
 
-## 🟡 Medium Priority — Noticeable product gaps
+## 🔴 High Priority — Quick wins & core gaps
 
-_(All items completed or moved to High Priority)_
+### ~~34. Signed URL Auto-Refresh~~ DONE
+~~Attachment URLs expire after 5 min.~~ Client-side 4-min interval re-fetches signed URLs for the active chat, restoring images/downloads without a page reload.
+
+### ~~35. Leave Group~~ DONE
+~~Non-admin users had no way to leave a group chat.~~ "Leave group" option added to members panel with confirmation, calls `deleteChat("for_me")` optimistically.
+
+### ~~36. Edit Group Name~~ DONE
+~~No way to rename a group chat after creation.~~ `PATCH /api/chat/[chatId]` endpoint added (admin-only). Inline edit UI in ChatHeader. Rename is optimistic.
+
+### ~~37. Retry Failed Uploads~~ DONE
+~~File upload errors showed no retry action.~~ Retry button added to failed attachment cards in MessageInput file preview strip.
+
+### ~~38. File Upload Progress Bar~~ DONE
+~~No visual feedback during file uploads.~~ Per-file progress bar shown in the preview strip using `XMLHttpRequest` upload progress events.
 
 ---
 
-## 🔵 Lower Priority — Polish & Security
+## 🟡 Medium Priority — UX polish & content features
 
-_(All items completed)_
+### ~~39. Members Panel Pagination~~ DONE
+~~Members list loads all members at once.~~ Cursor-based pagination (20 per page) added to `getChatMembersPaginated` backend query and `GET /api/chat/[chatId]/members?limit=&cursor=`. MembersPanel fetches page-by-page with a "Load more" button. Backward-compatible (no params = all members).
+
+### ~~40. Image/Video Inline Preview~~ DONE
+~~Images open as raw signed URLs.~~ `MediaLightbox` overlay component: images in full-screen modal (`max-h-[90vh]`), inline `<video controls>` for video, `<audio controls>` for audio. Close via X, backdrop click, or Escape. Non-media files keep download behavior.
+
+### ~~41. Markdown & Code Highlighting~~ DONE
+~~Messages render as plain text.~~ Added `**bold**`, `*italic*`, `~~strikethrough~~`, bullet lists (`- `/`* `), numbered lists (`1. `), and syntax-highlighted fenced code blocks via `highlight.js` (20 languages registered). `github-dark` theme for code. All rendering defined outside component to avoid re-render overhead.
+
+### ~~42. Add Members After Creation~~ DONE
+~~No way to invite new members to an existing group chat.~~ Admin-only `+` button in MembersPanel header opens an inline invite-by-email form. If the user has an account they are added directly as a write member (`POST /api/chat/[chatId]/invite`); if not, an invitation record is created and a signup email is sent. Member list auto-refreshes on success.
+
+10. **43. Message Pinning**
+    No ability to pin important messages. Requires new schema (`pinned_at` column or `pinned_messages` table), API endpoints, and a pinned messages panel in the chat UI.
+
+---
+
+## 🔵 Lower Priority — Advanced features
+
+### ~~44. Read Receipts UI~~ DONE
+~~No read indicator in the UI.~~ `GET /api/chat/[chatId]/read-receipts` returns receipts with display names. Receipts fetched on chat open and kept live via `read_receipts` Realtime subscription. `chatStore` holds receipts keyed by chatId. The last own message seen by at least one other member shows "Seen by X, Y" beneath it in italic muted text. Truncates to "Seen by A, B +N more" for long lists.
+
+12. **45. Block/Mute Users**
+    No user-level blocking. Requires new schema, API, and client-side message filtering for blocked users.
+
+### ~~46. Keyboard Shortcuts~~ DONE
+~~No keyboard navigation.~~ `useKeyboardShortcuts` hook: `Ctrl/Cmd+K` toggles search, `Escape` exits search, `Alt+↑/↓` navigates between chats in sidebar.
+
+14. **47. Full-Text Message Search**
+    Search box exists but only filters client-side. Add a backend `tsvector`/`tsquery` full-text search index and search results UI with message jumping. Benefits from keyboard shortcut (#46) for discovery.
+
+### ~~48. Thread View~~ DONE
+~~Schema supports `parentId` for replies but there's no expandable thread UI.~~ `ThreadPanel` right-side Sheet shows full reply chain for a message. Root message displayed at top, replies chronologically below, with inline reply input. Thread indicator ("N replies") shown below messages with replies. "View thread" button in hover action bar.
+
+16. **49. Call Flow Completion**
+    Voice call hooks and modal exist but the accept/reject/missed-call flow is incomplete. Finish WebRTC signaling, ringtone, and multi-screen call UI.
+
+17. **53. Contacts Master Data**
+    No contacts system. Add a `contacts` table (user → contact with optional nickname/notes) and a Contacts page in settings. Once contacts exist, invite flows (new chat, add member) can show a contact picker so users select from their saved contacts instead of typing emails manually. Requires DB migration `contacts` table + API endpoints + UI.

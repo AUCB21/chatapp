@@ -26,6 +26,7 @@ import {
   MAX_FILE_SIZE,
   MAX_FILES_PER_MESSAGE,
   ALLOWED_MIME_TYPES,
+  CODE_FILE_EXTENSIONS,
 } from "@/lib/validation";
 import {
   ok,
@@ -178,7 +179,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       if (file.size > MAX_FILE_SIZE) {
         return badRequest(`File "${file.name}" exceeds 10 MB limit`);
       }
-      if (!ALLOWED_MIME_TYPES.has(file.type)) {
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+      if (!ALLOWED_MIME_TYPES.has(file.type) && !CODE_FILE_EXTENSIONS.has(ext)) {
         return badRequest(`File type "${file.type}" is not allowed`);
       }
     }

@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { useTheme } from "next-themes";
-import { ArrowLeft, ChevronRight, Moon, Sun, Monitor, Palette, User, Shield, Trash2, KeyRound } from "lucide-react";
+import { ArrowLeft, ChevronRight, Moon, Sun, Monitor, Palette, User, Shield, Trash2, KeyRound, Check, RotateCcw } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useProfileStore } from "@/store/profileStore";
@@ -37,7 +37,6 @@ export default function SettingsView({ onBack, onLogout, onDeleteAccount }: Sett
   const user = useSessionStore((s) => s.user);
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleteModal, setDeleteModal] = useState(false);
   const [passwordModal, setPasswordModal] = useState(false);
@@ -54,29 +53,32 @@ export default function SettingsView({ onBack, onLogout, onDeleteAccount }: Sett
     setEditDisplayName(profile?.displayName ?? "");
   }, [profile?.username, profile?.displayName]);
 
-  const saveProfile = useCallback(async (updates: Record<string, unknown>) => {
-    setSaving(true);
-    try {
-      const res = await fetch("/api/user/profile", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates),
-      });
-      if (res.ok) {
-        const { data } = await res.json();
-        if (data.profile) {
-          updateProfileStore({
-            ...data.profile,
-            createdAt: new Date(data.profile.createdAt),
-            updatedAt: new Date(data.profile.updatedAt),
-          });
+  const saveProfile = useCallback((updates: Record<string, unknown>) => {
+    // Optimistic: update store immediately so UI feels instant
+    updateProfileStore(updates as Partial<import("@/db/schema").UserProfile>);
+
+    // Fire-and-forget background persist — rollback on failure
+    fetch("/api/user/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          // Sync server-authoritative fields (updatedAt, etc.)
+          const { data } = await res.json();
+          if (data.profile) {
+            updateProfileStore({
+              ...data.profile,
+              createdAt: new Date(data.profile.createdAt),
+              updatedAt: new Date(data.profile.updatedAt),
+            });
+          }
         }
-      }
-    } catch {
-      // silent
-    } finally {
-      setSaving(false);
-    }
+      })
+      .catch(() => {
+        // silent — optimistic value stays; next boot will reconcile
+      });
   }, [updateProfileStore]);
 
   const handlePasswordChange = useCallback(async () => {
@@ -177,53 +179,15 @@ export default function SettingsView({ onBack, onLogout, onDeleteAccount }: Sett
 
   if (page === "appearance") {
     return (
-      <div className="flex h-full flex-col bg-sidebar">
-        <PageHeader title="Appearance" onBack={() => setPage("main")} />
-        <ScrollArea className="flex-1 px-4 py-4">
-          <div className="space-y-6">
-            {/* Theme */}
-            <FieldGroup label="Theme">
-              <div className="flex gap-2">
-                {[
-                  { value: "light", icon: Sun, label: "Light" },
-                  { value: "dark", icon: Moon, label: "Dark" },
-                  { value: "system", icon: Monitor, label: "System" },
-                ].map(({ value, icon: Icon, label }) => (
-                  <button
-                    key={value}
-                    onClick={() => setTheme(value)}
-                    className={`flex-1 flex flex-col items-center gap-1.5 py-2.5 rounded-lg border transition-all ${
-                      mounted && theme === value
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-sidebar-border/50 hover:bg-sidebar-accent/60 text-muted-foreground"
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                    <span className="text-[0.65rem] font-medium">{label}</span>
-                  </button>
-                ))}
-              </div>
-            </FieldGroup>
-
-            {/* Custom Colors */}
-            <ColorPicker
-              label="Background Color"
-              value={profile?.accentBg ?? null}
-              onChange={(color) => saveProfile({ accentBg: color })}
-            />
-            <ColorPicker
-              label="Font Color"
-              value={profile?.accentFont ?? null}
-              onChange={(color) => saveProfile({ accentFont: color })}
-            />
-            <ColorPicker
-              label="Chat Bubble Color"
-              value={profile?.accentChat ?? null}
-              onChange={(color) => saveProfile({ accentChat: color })}
-            />
-          </div>
-        </ScrollArea>
-      </div>
+      <AppearancePage
+        profile={profile}
+        theme={theme}
+        mounted={mounted}
+        setTheme={setTheme}
+        saveProfile={saveProfile}
+        updateProfileStore={updateProfileStore}
+        onBack={() => setPage("main")}
+      />
     );
   }
 
@@ -239,7 +203,6 @@ export default function SettingsView({ onBack, onLogout, onDeleteAccount }: Sett
                 <button
                   key={opt.value}
                   onClick={() => saveProfile({ status: opt.value })}
-                  disabled={saving}
                   className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${
                     isActive
                       ? "bg-primary/10 border border-primary/20"
@@ -473,6 +436,146 @@ export default function SettingsView({ onBack, onLogout, onDeleteAccount }: Sett
 }
 
 // --- Sub-components ---
+
+interface ColorDraft {
+  accentBg: string | null;
+  accentFont: string | null;
+  accentChat: string | null;
+}
+
+function AppearancePage({
+  profile,
+  theme,
+  mounted,
+  setTheme,
+  saveProfile,
+  updateProfileStore,
+  onBack,
+}: {
+  profile: ReturnType<typeof useProfileStore.getState>["profile"];
+  theme: string | undefined;
+  mounted: boolean;
+  setTheme: (t: string) => void;
+  saveProfile: (updates: Record<string, unknown>) => void;
+  updateProfileStore: ReturnType<typeof useProfileStore.getState>["updateProfile"];
+  onBack: () => void;
+}) {
+  // Snapshot the persisted colors on mount — this ref is the source of truth
+  // for "what's saved on the server" and won't be polluted by live preview.
+  const [persisted, setPersisted] = useState<ColorDraft>(() => ({
+    accentBg: profile?.accentBg ?? null,
+    accentFont: profile?.accentFont ?? null,
+    accentChat: profile?.accentChat ?? null,
+  }));
+
+  const [draft, setDraft] = useState<ColorDraft>(persisted);
+
+  const isDirty =
+    draft.accentBg !== persisted.accentBg ||
+    draft.accentFont !== persisted.accentFont ||
+    draft.accentChat !== persisted.accentChat;
+
+  // Live preview: push draft colors into the store so the app reflects them instantly
+  useEffect(() => {
+    updateProfileStore({
+      accentBg: draft.accentBg,
+      accentFont: draft.accentFont,
+      accentChat: draft.accentChat,
+    });
+  }, [draft, updateProfileStore]);
+
+  function handleSave() {
+    setPersisted(draft);
+    saveProfile({
+      accentBg: draft.accentBg,
+      accentFont: draft.accentFont,
+      accentChat: draft.accentChat,
+    });
+  }
+
+  function handleRevert() {
+    setDraft(persisted);
+    updateProfileStore({
+      accentBg: persisted.accentBg,
+      accentFont: persisted.accentFont,
+      accentChat: persisted.accentChat,
+    });
+  }
+
+  return (
+    <div className="flex h-full flex-col bg-sidebar">
+      <PageHeader title="Appearance" onBack={() => {
+        // Revert unsaved changes when navigating away
+        if (isDirty) handleRevert();
+        onBack();
+      }} />
+      <ScrollArea className="flex-1 px-4 py-4">
+        <div className="space-y-6">
+          {/* Theme */}
+          <FieldGroup label="Theme">
+            <div className="flex gap-2">
+              {[
+                { value: "light", icon: Sun, label: "Light" },
+                { value: "dark", icon: Moon, label: "Dark" },
+                { value: "system", icon: Monitor, label: "System" },
+              ].map(({ value, icon: Icon, label }) => (
+                <button
+                  key={value}
+                  onClick={() => setTheme(value)}
+                  className={`flex-1 flex flex-col items-center gap-1.5 py-2.5 rounded-lg border transition-all ${
+                    mounted && theme === value
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-sidebar-border/50 hover:bg-sidebar-accent/60 text-muted-foreground"
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span className="text-[0.65rem] font-medium">{label}</span>
+                </button>
+              ))}
+            </div>
+          </FieldGroup>
+
+          {/* Custom Colors — draft-based with live preview */}
+          <ColorPicker
+            label="Background Color"
+            value={draft.accentBg}
+            onChange={(color) => setDraft((d) => ({ ...d, accentBg: color }))}
+          />
+          <ColorPicker
+            label="Font Color"
+            value={draft.accentFont}
+            onChange={(color) => setDraft((d) => ({ ...d, accentFont: color }))}
+          />
+          <ColorPicker
+            label="Chat Bubble Color"
+            value={draft.accentChat}
+            onChange={(color) => setDraft((d) => ({ ...d, accentChat: color }))}
+          />
+
+          {/* Save / Revert buttons — only shown when draft differs */}
+          {isDirty && (
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={handleSave}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+              >
+                <Check className="w-3.5 h-3.5" />
+                Save
+              </button>
+              <button
+                onClick={handleRevert}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-border bg-secondary text-secondary-foreground text-sm font-medium hover:opacity-80 transition-opacity"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Revert
+              </button>
+            </div>
+          )}
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
 
 function PageHeader({ title, onBack }: { title: string; onBack: () => void }) {
   return (

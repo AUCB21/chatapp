@@ -1,5 +1,7 @@
 "use client";
 
+import { memo, useState, useRef, useEffect } from "react";
+import { Pencil } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import VoiceCallControls from "@/components/VoiceCallControls";
 import ScreenShareControls from "@/components/ScreenShareControls";
@@ -27,9 +29,11 @@ interface ChatHeaderProps {
   shareError: string | null;
   onStartSharing: (options: import("@/lib/webrtc").ScreenShareOptions) => Promise<void>;
   onStopSharing: () => void;
+  isAdmin: boolean;
   onBack: () => void;
   onToggleSearch: () => void;
   onToggleMembers: () => void;
+  onRenameChat?: (newName: string) => void;
 }
 
 function getAvatarColor(name: string) {
@@ -45,7 +49,7 @@ function getAvatarColor(name: string) {
   return colors[name.charCodeAt(0) % colors.length];
 }
 
-export default function ChatHeader({
+function ChatHeader({
   chat,
   isPending,
   onlineUsers,
@@ -64,14 +68,32 @@ export default function ChatHeader({
   isIncomingShare,
   presenter,
   shareError,
+  isAdmin,
   onStartSharing,
   onStopSharing,
   onBack,
   onToggleSearch,
   onToggleMembers,
+  onRenameChat,
 }: ChatHeaderProps) {
   const avatarColor = getAvatarColor(chat.displayName);
   const isOnline = onlineUsers.length > 0;
+  const canRename = isAdmin && chat.type === "group" && onRenameChat;
+
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
+  const editRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) editRef.current?.focus();
+  }, [editing]);
+
+  function handleRenameSave() {
+    const trimmed = editValue.trim();
+    setEditing(false);
+    if (!trimmed || trimmed === chat.displayName || !onRenameChat) return;
+    onRenameChat(trimmed);
+  }
 
   return (
     <div className="h-15 px-3 md:px-4 border-b border-border flex items-center gap-2.5 shrink-0 bg-background/95 backdrop-blur-md">
@@ -93,7 +115,33 @@ export default function ChatHeader({
       </Avatar>
 
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold truncate leading-tight">{chat.displayName}</p>
+        {editing ? (
+          <input
+            ref={editRef}
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onBlur={handleRenameSave}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleRenameSave();
+              if (e.key === "Escape") setEditing(false);
+            }}
+            maxLength={100}
+            className="text-sm font-semibold w-full bg-muted/60 border border-border rounded-md px-2 py-0.5 outline-none focus:ring-1 focus:ring-ring/40"
+          />
+        ) : (
+          <div className="flex items-center gap-1.5 group/name">
+            <p className="text-sm font-semibold truncate leading-tight">{chat.displayName}</p>
+            {canRename && (
+              <button
+                onClick={() => { setEditValue(chat.displayName); setEditing(true); }}
+                className="opacity-0 group-hover/name:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                title="Rename group"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        )}
         <div className="flex items-center gap-1.5 mt-0.5">
           {!isPending && (
             <div className={`w-1.5 h-1.5 rounded-full transition-colors ${
@@ -162,3 +210,5 @@ export default function ChatHeader({
     </div>
   );
 }
+
+export default memo(ChatHeader);

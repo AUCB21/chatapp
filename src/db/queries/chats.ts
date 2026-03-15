@@ -144,6 +144,19 @@ export async function getOrCreateSelfChat(userId: string) {
 }
 
 /**
+ * Updates a chat's name. Returns the updated chat or null if not found.
+ */
+export async function updateChatName(chatId: string, name: string) {
+  const [updated] = await db
+    .update(chats)
+    .set({ name })
+    .where(eq(chats.id, chatId))
+    .returning();
+
+  return updated ?? null;
+}
+
+/**
  * Hard-deletes a chat. Cascade removes memberships, messages, reactions, etc.
  */
 export async function deleteChat(chatId: string) {

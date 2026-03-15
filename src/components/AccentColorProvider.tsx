@@ -5,36 +5,43 @@ import { useShallow } from "zustand/react/shallow";
 import { useProfileStore, selectAccentColors } from "@/store/profileStore";
 
 /**
- * Injects user accent color CSS variables onto :root.
- * Components use these variables via Tailwind arbitrary values or inline styles.
+ * Overrides core theme CSS variables when the user has custom accent colors.
  *
- * Variables:
- *   --accent-bg    → custom background color
- *   --accent-font  → custom font/text color
- *   --accent-chat  → custom chat bubble color (own messages)
+ * Instead of introducing separate --accent-* vars, we override the theme
+ * variables themselves (--background, --foreground, --primary) so every
+ * Tailwind class that references them (bg-background, text-foreground,
+ * bg-primary, etc.) automatically picks up the custom color.
+ *
+ * When no custom color is set the override is removed and the theme
+ * defaults (light/dark) take effect again.
  */
 export default function AccentColorProvider() {
   const colors = useProfileStore(useShallow(selectAccentColors));
 
   useEffect(() => {
-    const root = document.documentElement;
+    const root = document.documentElement.style;
 
+    // Override --background when custom bg is set
     if (colors.bg) {
-      root.style.setProperty("--accent-bg", colors.bg);
+      root.setProperty("--background", colors.bg);
     } else {
-      root.style.removeProperty("--accent-bg");
+      root.removeProperty("--background");
     }
 
+    // Override --foreground when custom font color is set
     if (colors.font) {
-      root.style.setProperty("--accent-font", colors.font);
+      root.setProperty("--foreground", colors.font);
+      root.setProperty("--card-foreground", colors.font);
     } else {
-      root.style.removeProperty("--accent-font");
+      root.removeProperty("--foreground");
+      root.removeProperty("--card-foreground");
     }
 
+    // Override --primary when custom chat bubble color is set
     if (colors.chat) {
-      root.style.setProperty("--accent-chat", colors.chat);
+      root.setProperty("--primary", colors.chat);
     } else {
-      root.style.removeProperty("--accent-chat");
+      root.removeProperty("--primary");
     }
   }, [colors.bg, colors.font, colors.chat]);
 

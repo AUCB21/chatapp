@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useTheme } from "next-themes";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -48,7 +48,7 @@ function getAvatarColor(name: string) {
   return colors[idx];
 }
 
-export default function ChatSidebar({
+function ChatSidebar({
   chats,
   activeChatId,
   loading,
@@ -70,6 +70,8 @@ export default function ChatSidebar({
   const [mounted, setMounted] = useState(false);
   const [search, setSearch] = useState("");
   const profile = useProfileStore((s) => s.profile);
+  const [menuChat, setMenuChat] = useState<ChatWithRole | null>(null);
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -273,45 +275,68 @@ export default function ChatSidebar({
                 )}
 
                 <div className="shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:bg-sidebar-accent transition-colors"
-                        aria-label={`Chat actions for ${chat.name}`}
-                      >
-                        <EllipsisVertical className="w-3.5 h-3.5" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" side="bottom">
-                      <DropdownMenuItem onClick={() => onToggleMute(chat.id)}>
-                        {isMuted ? (
-                          <><Bell className="w-3.5 h-3.5 mr-1.5" />Unmute</>
-                        ) : (
-                          <><BellOff className="w-3.5 h-3.5 mr-1.5" />Mute</>
-                        )}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onClick={() => onDeleteChat(chat.id, "for_me")}
-                      >
-                        Delete for me
-                      </DropdownMenuItem>
-                      {chat.role === "admin" && (
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onClick={() => onDeleteChat(chat.id, "for_everyone")}
-                        >
-                          Delete for everyone
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <button
+                    className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:bg-sidebar-accent transition-colors"
+                    aria-label={`Chat actions for ${chat.displayName}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setMenuPos({ x: rect.right, y: rect.bottom });
+                      setMenuChat(chat);
+                    }}
+                  >
+                    <EllipsisVertical className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             );
           })}
         </ScrollArea>
       </div>
+
+      {/* Shared chat actions menu */}
+      {menuChat && menuPos && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setMenuChat(null)} />
+          <div
+            className="fixed z-50 min-w-40 rounded-xl border border-border bg-popover shadow-lg py-1 animate-in fade-in slide-in-from-top-1 duration-100"
+            style={{ top: menuPos.y, left: menuPos.x, transform: "translateX(-100%)" }}
+          >
+            <button
+              onClick={() => { onToggleMute(menuChat.id); setMenuChat(null); }}
+              className="w-full flex items-center gap-1.5 px-3 py-1.5 text-sm hover:bg-muted transition-colors"
+            >
+              {mutedChats.has(menuChat.id) ? (
+                <><Bell className="w-3.5 h-3.5" />Unmute</>
+              ) : (
+                <><BellOff className="w-3.5 h-3.5" />Mute</>
+              )}
+            </button>
+            {menuChat.type === "group" && menuChat.role !== "admin" && (
+              <button
+                onClick={() => { onDeleteChat(menuChat.id, "for_me"); setMenuChat(null); }}
+                className="w-full flex items-center gap-1.5 px-3 py-1.5 text-sm text-destructive hover:bg-muted transition-colors"
+              >
+                <LogOut className="w-3.5 h-3.5" />Leave group
+              </button>
+            )}
+            <button
+              onClick={() => { onDeleteChat(menuChat.id, "for_me"); setMenuChat(null); }}
+              className="w-full flex items-center gap-1.5 px-3 py-1.5 text-sm text-destructive hover:bg-muted transition-colors"
+            >
+              Delete for me
+            </button>
+            {menuChat.role === "admin" && (
+              <button
+                onClick={() => { onDeleteChat(menuChat.id, "for_everyone"); setMenuChat(null); }}
+                className="w-full flex items-center gap-1.5 px-3 py-1.5 text-sm text-destructive hover:bg-muted transition-colors"
+              >
+                Delete for everyone
+              </button>
+            )}
+          </div>
+        </>
+      )}
 
       {/* Footer */}
       <div className="shrink-0 px-3 py-4 border-t border-sidebar-border">
@@ -351,3 +376,5 @@ export default function ChatSidebar({
     </div>
   );
 }
+
+export default memo(ChatSidebar);

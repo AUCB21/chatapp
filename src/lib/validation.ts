@@ -44,11 +44,37 @@ export const ALLOWED_MIME_TYPES = new Set([
   "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   // Media
   "video/mp4", "video/webm", "audio/mpeg", "audio/ogg", "audio/webm",
-  // Code
-  "text/html", "text/css", "text/javascript", "application/javascript",
-  "application/json", "application/xml", "text/xml", "text/csv", "text/markdown",
+  // Code & text
+  "text/html", "text/css", "text/javascript", "text/typescript", "text/jsx",
+  "text/csv", "text/markdown", "text/xml", "text/x-python", "text/x-java",
+  "text/x-c", "text/x-c++", "text/x-csharp", "text/x-go", "text/x-rust",
+  "text/x-ruby", "text/x-php", "text/x-sql", "text/x-yaml", "text/x-diff",
+  "text/x-shellscript",
+  "application/javascript", "application/typescript",
+  "application/json", "application/xml",
   "application/x-yaml", "application/x-httpd-php", "application/x-sh",
-  "application/x-python", "text/x-python",
+  "application/x-python", "application/x-ruby", "application/x-perl",
+  // Archives
+  "application/zip", "application/x-zip-compressed",
+  "application/vnd.rar", "application/x-rar-compressed",
+]);
+
+/** Code file extensions allowed even when browser reports application/octet-stream */
+export const CODE_FILE_EXTENSIONS = new Set([
+  "js", "jsx", "mjs", "cjs", "ts", "tsx", "mts",
+  "py", "pyw", "go", "rs", "java", "kt",
+  "html", "htm", "svg", "xml", "xsl",
+  "css", "scss", "less", "sass",
+  "json", "jsonc",
+  "sh", "bash", "zsh", "bat", "ps1",
+  "sql",
+  "c", "h", "cpp", "cc", "cxx", "hpp",
+  "cs", "rb", "rake", "php",
+  "yaml", "yml", "toml", "ini", "cfg", "conf",
+  "md", "mdx", "rst", "txt",
+  "diff", "patch",
+  "dockerfile", "makefile", "cmake",
+  "env", "gitignore", "editorconfig",
 ]);
 
 export const editMessageSchema = z.object({

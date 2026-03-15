@@ -16,7 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Pencil } from "lucide-react";
+import { Check, LogOut, Pencil, UserPlus, X } from "lucide-react";
 import type { MemberRole } from "@/db/schema";
 
 interface Member {
@@ -31,10 +31,12 @@ interface Member {
 
 interface MembersPanelProps {
   chatId: string;
+  chatType: "direct" | "group";
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentUserId: string;
   currentUserRole: string;
+  onLeaveGroup?: () => void;
 }
 
 const ROLE_BADGE: Record<MemberRole, { label: string; className: string }> = {
@@ -68,23 +70,27 @@ function getAvatarColor(str: string) {
 
 export default function MembersPanel({
   chatId,
+  chatType,
   open,
   onOpenChange,
   currentUserId,
   currentUserRole,
+  onLeaveGroup,
 }: MembersPanelProps) {
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(false);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const isAdmin = currentUserRole === "admin";
 
   const fetchMembers = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/chat/${chatId}/members`);
+      const res = await fetch(`/api/chat/${chatId}/members?limit=20`);
       if (res.ok) {
         const { data } = await res.json();
         setMembers(data.members);
+        setNextCursor(data.nextCursor ?? null);
       }
     } catch {
       // silent
@@ -93,99 +99,189 @@ export default function MembersPanel({
     }
   }, [chatId]);
 
-  useEffect(() => {
-    if (open) fetchMembers();
-  }, [open, fetchMembers]);
-
-  async function handleChangeRole(userId: string, newRole: MemberRole) {
-    setActionLoading(userId);
+  const fetchMoreMembers = useCallback(async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
     try {
-      const res = await fetch(`/api/chat/${chatId}/members`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, role: newRole }),
-      });
+      const res = await fetch(
+        `/api/chat/${chatId}/members?limit=20&cursor=${encodeURIComponent(nextCursor)}`
+      );
       if (res.ok) {
-        setMembers((prev) =>
-          prev.map((m) => (m.userId === userId ? { ...m, role: newRole } : m))
-        );
+        const { data } = await res.json();
+        setMembers((prev) => [...prev, ...data.members]);
+        setNextCursor(data.nextCursor ?? null);
       }
     } catch {
       // silent
     } finally {
-      setActionLoading(null);
+      setLoadingMore(false);
     }
+  }, [chatId, nextCursor, loadingMore]);
+
+  useEffect(() => {
+    if (open) fetchMembers();
+  }, [open, fetchMembers]);
+
+  function handleChangeRole(userId: string, newRole: MemberRole) {
+    // Optimistic update
+    setMembers((prev) =>
+      prev.map((m) => (m.userId === userId ? { ...m, role: newRole } : m))
+    );
+    // Background persist
+    fetch(`/api/chat/${chatId}/members`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, role: newRole }),
+    }).catch(() => {});
   }
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const editRef = useRef<HTMLInputElement>(null);
 
-  async function handleNicknameSave(userId: string) {
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteStatus, setInviteStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [inviteError, setInviteError] = useState<string | null>(null);
+
+  async function handleInvite(e: React.FormEvent) {
+    e.preventDefault();
+    const email = inviteEmail.trim();
+    if (!email) return;
+    setInviteStatus("loading");
+    setInviteError(null);
+    try {
+      const res = await fetch(`/api/chat/${chatId}/invite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, role: "write" }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setInviteError(json.error ?? "Failed to invite");
+        setInviteStatus("error");
+        return;
+      }
+      setInviteStatus("success");
+      setInviteEmail("");
+      // Refresh member list in case user was added directly
+      fetchMembers();
+      setTimeout(() => {
+        setInviteStatus("idle");
+        setInviteOpen(false);
+      }, 1500);
+    } catch {
+      setInviteError("Network error");
+      setInviteStatus("error");
+    }
+  }
+
+  function handleNicknameSave(userId: string) {
     const trimmed = editValue.trim();
     const member = members.find((m) => m.userId === userId);
     if (!member) return;
 
-    // null clears the override, empty string also clears
     const newName = trimmed || null;
     if (newName === member.chatDisplayName) {
       setEditingId(null);
       return;
     }
 
-    setActionLoading(userId);
-    try {
-      const res = await fetch(`/api/chat/${chatId}/profile`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, displayName: newName }),
-      });
-      if (res.ok) {
-        setMembers((prev) =>
-          prev.map((m) =>
-            m.userId === userId
-              ? {
-                  ...m,
-                  chatDisplayName: newName,
-                  displayName: newName ?? m.globalDisplayName ?? m.email.split("@")[0],
-                }
-              : m
-          )
-        );
-      }
-    } catch {
-      // silent
-    } finally {
-      setActionLoading(null);
-      setEditingId(null);
-    }
+    // Optimistic update
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.userId === userId
+          ? {
+              ...m,
+              chatDisplayName: newName,
+              displayName: newName ?? m.globalDisplayName ?? m.email.split("@")[0],
+            }
+          : m
+      )
+    );
+    setEditingId(null);
+
+    // Background persist
+    fetch(`/api/chat/${chatId}/profile`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, displayName: newName }),
+    }).catch(() => {});
   }
 
-  async function handleRemove(userId: string) {
-    setActionLoading(userId);
-    try {
-      const res = await fetch(`/api/chat/${chatId}/members`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
-      });
-      if (res.ok) {
-        setMembers((prev) => prev.filter((m) => m.userId !== userId));
-      }
-    } catch {
-      // silent
-    } finally {
-      setActionLoading(null);
-    }
+  function handleRemove(userId: string) {
+    // Optimistic update
+    setMembers((prev) => prev.filter((m) => m.userId !== userId));
+    // Background persist
+    fetch(`/api/chat/${chatId}/members`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    }).catch(() => {});
   }
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-[20rem] sm:w-88 p-0 flex flex-col">
         <SheetHeader className="px-4 pt-4 pb-3 border-b border-border">
-          <SheetTitle className="text-sm font-semibold">
-            Members{!loading && ` (${members.length})`}
-          </SheetTitle>
+          <div className="flex items-center justify-between">
+            <SheetTitle className="text-sm font-semibold">
+              Members{!loading && ` (${members.length})`}
+            </SheetTitle>
+            {isAdmin && chatType === "group" && (
+              <button
+                onClick={() => { setInviteOpen((v) => !v); setInviteStatus("idle"); setInviteError(null); }}
+                className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                title="Invite member"
+              >
+                <UserPlus className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {isAdmin && inviteOpen && (
+            <form onSubmit={handleInvite} className="mt-2 flex flex-col gap-1.5">
+              <div className="flex gap-1.5">
+                <input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="user@example.com"
+                  disabled={inviteStatus === "loading" || inviteStatus === "success"}
+                  className="flex-1 text-sm bg-muted/60 border border-border rounded-md px-2.5 py-1 outline-none focus:ring-1 focus:ring-ring/40 disabled:opacity-50"
+                />
+                <button
+                  type="submit"
+                  disabled={inviteStatus === "loading" || inviteStatus === "success" || !inviteEmail.trim()}
+                  className="w-8 h-8 flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 transition-opacity"
+                >
+                  {inviteStatus === "loading" ? (
+                    <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                  ) : inviteStatus === "success" ? (
+                    <Check className="w-3.5 h-3.5" />
+                  ) : (
+                    <UserPlus className="w-3.5 h-3.5" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setInviteOpen(false); setInviteEmail(""); setInviteStatus("idle"); setInviteError(null); }}
+                  className="w-8 h-8 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              {inviteStatus === "success" && (
+                <p className="text-[0.65rem] text-emerald-500">Invited successfully!</p>
+              )}
+              {inviteStatus === "error" && inviteError && (
+                <p className="text-[0.65rem] text-destructive">{inviteError}</p>
+              )}
+            </form>
+          )}
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto">
@@ -197,6 +293,7 @@ export default function MembersPanel({
               </svg>
             </div>
           ) : (
+            <>
             <ul className="py-1">
               {members.map((member) => {
                 const displayName = member.displayName;
@@ -280,7 +377,6 @@ export default function MembersPanel({
                           <DropdownMenuTrigger asChild>
                             <button
                               className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors opacity-0 group-hover:opacity-100"
-                              disabled={actionLoading === member.userId}
                               aria-label="Member actions"
                             >
                               <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 16 16">
@@ -327,8 +423,38 @@ export default function MembersPanel({
                 );
               })}
             </ul>
+            {nextCursor && (
+              <div className="flex justify-center py-3">
+                <button
+                  onClick={fetchMoreMembers}
+                  disabled={loadingMore}
+                  className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 rounded-md transition-colors disabled:opacity-50"
+                >
+                  {loadingMore ? (
+                    <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                  ) : null}
+                  {loadingMore ? "Loading..." : "Load more"}
+                </button>
+              </div>
+            )}
+            </>
           )}
         </div>
+
+        {chatType === "group" && !isAdmin && onLeaveGroup && (
+          <div className="shrink-0 px-4 py-3 border-t border-border">
+            <button
+              onClick={onLeaveGroup}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              Leave group
+            </button>
+          </div>
+        )}
       </SheetContent>
     </Sheet>
   );
