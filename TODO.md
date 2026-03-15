@@ -97,54 +97,70 @@
 ### ~~32. Password Strength Validator~~ DONE
 ~~No password strength enforcement.~~ `PASSWORD_RULES` array with real-time UI checklist on register and reset-password pages. Minimum 10 chars, uppercase, lowercase, special character. Shared `passwordSchema` Zod validator.
 
----
+### ~~16. File / Image Sharing~~ DONE
+~~The `<Paperclip>` button is rendered but does nothing.~~ Full file/image sharing via Supabase Storage. FormData upload (max 10 files, 10 MB each), MIME allowlist, `attachments` table with cascade delete, signed URLs (5-min TTL), drag-and-drop, image thumbnails + file cards in MessageBubble, realtime broadcast, storage cleanup on message deletion. ⚠️ Requires migration `0014_attachments.sql` on Supabase + `chat-attachments` private bucket.
 
-## 🔴 High Priority — Users will hit these immediately
-
-### Dependency-First Execution Order
-1) **16** File/image sharing MVP
-2) **11** Storage hardening gate before production rollout of 16
-
-### 16. File / Image Sharing
-The `<Paperclip>` button is rendered but does nothing. Implement file/image sharing with a single storage provider and attachment metadata in DB. Blocked by item 11 for production hardening.
-
-**Recommended approach (MVP):** use one provider only (Supabase Storage) for now; delete the extra S3 bucket unless there is a strong non-functional requirement to keep it.
-
-- Phase 0 — Storage decision (required): choose exactly one provider for upload/read/delete paths and remove the unused one.
-- Phase 1 — DB contract: add `attachments` table linked to `messages` with `message_id`, `uploader_user_id`, `storage_provider`, `storage_key`, `original_name`, `mime_type`, `size_bytes`, optional `width`/`height`, and `created_at`.
-- Phase 1 — DB integrity: add indexes on `message_id` and `uploader_user_id`; cascade delete on `message_id`.
-- Phase 2 — Upload API: implement server-authenticated upload flow (presigned URL or proxy upload), then store attachment metadata in DB.
-- Phase 2 — Read API: return signed read URLs (short TTL), never expose raw bucket paths/public objects.
-- Phase 3 — Message API: support text+attachment and attachment-only messages consistently.
-- Phase 4 — UI composer: wire `Paperclip` to file picker, show upload progress/error, and prevent send until upload result is known.
-- Phase 4 — UI rendering: show image previews in `MessageBubble`, and file cards for non-image attachments.
-- Phase 5 — Realtime/store: include attachments in optimistic messages, fetch, retry, and pagination payloads.
-- Phase 6 — Deletion behavior: decide and implement whether message deletion also deletes storage objects immediately or via cleanup jobs.
-- Phase 7 — Production gate: ship behind a feature flag, then complete item 11 before enabling broadly.
-
-### 11. Per-User Storage Hardening (Prerequisite for production rollout)
-After item 16 works in staging, harden the chosen storage provider before production rollout.
-
-- Provider scope: enforce single-provider policy in code/config so uploads cannot drift across multiple buckets/providers.
-- Access model: private objects only; read access via signed URLs from server APIs.
-- Path convention: enforce deterministic keys, e.g. `chat/<chatId>/user/<userId>/<yyyy>/<mm>/<uuid>-<safeName>`.
-- AuthZ checks: uploader/downloader must be a member of the target chat at request time.
-- Validation policy: strict MIME allowlist, max file size, and optional dimension caps for images.
-- Signed URL policy: short TTL (1–5 min), with refresh-on-demand for older messages.
-- Quotas and limits: per-file, per-user, and optional per-chat usage limits with explicit API errors.
-- Abuse controls: optional scanning/quarantine workflow for suspicious content before it becomes visible.
-- Cleanup jobs: remove orphaned objects, failed-temp uploads, and (if chosen) files from deleted messages.
-- Auditability: log upload/read/delete events with userId/chatId/storageKey for incident response.
-- Release gate: keep item 16 behind a flag until hardening checks are validated in staging.
+### ~~11. Per-User Storage Hardening~~ DONE (partial)
+~~Harden storage before production rollout.~~ Private bucket, signed URLs with 5-min TTL, server-proxy uploads via service role key (no client-side bucket access), strict MIME allowlist, file size limits, storage cleanup on message deletion. Remaining: per-user quotas, abuse scanning, audit logging.
 
 ---
 
-## 🟡 Medium Priority — Noticeable product gaps
+## 🔴 High Priority — Quick wins & core gaps
 
-_(All items completed or moved to High Priority)_
+### Execution Order (least complex first, dependencies respected)
+
+1. **34. Signed URL Auto-Refresh**
+   Attachment URLs expire after 5 min. If a chat stays open longer, images break and downloads fail. Add a client-side refresh mechanism (re-fetch signed URLs on demand or on a timer).
+
+2. **35. Leave Group**
+   Non-admin users have no way to leave a group chat — they can only be removed by an admin. Add a "Leave group" option in the chat menu/members panel with confirmation modal.
+
+3. **36. Edit Group Name**
+   No way to rename a group chat after creation. Add `PATCH /api/chat/[chatId]` endpoint (admin-only) and inline edit UI in the chat header or settings.
+
+4. **37. Retry Failed Uploads**
+   File upload errors show a message but no retry action. Add a retry button on failed attachment uploads in the MessageInput file preview strip.
+
+5. **38. File Upload Progress Bar**
+   No visual feedback during file uploads. Replace `fetch` with `XMLHttpRequest` or a progress-aware wrapper to show per-file upload progress in the preview strip.
 
 ---
 
-## 🔵 Lower Priority — Polish & Security
+## 🟡 Medium Priority — UX polish & content features
 
-_(All items completed)_
+6. **39. Members Panel Pagination**
+   Members list loads all members at once. Add cursor-based pagination for groups with many members.
+
+7. **40. Image/Video Inline Preview**
+   Images open as raw signed URLs. Add a lightbox overlay for image viewing and inline `<video>`/`<audio>` players for media attachments.
+
+8. **41. Markdown & Code Highlighting**
+   Messages render as plain text. Add markdown parsing (bold, italic, links, lists) and syntax-highlighted code blocks using a lightweight library.
+
+9. **42. Add Members After Creation**
+   No way to invite new members to an existing group chat. Add a search/invite UI in the members panel that reuses the existing invitation API.
+
+10. **43. Message Pinning**
+    No ability to pin important messages. Requires new schema (`pinned_at` column or `pinned_messages` table), API endpoints, and a pinned messages panel in the chat UI.
+
+---
+
+## 🔵 Lower Priority — Advanced features
+
+11. **44. Read Receipts UI**
+    Schema has `read_receipts` table but the UI doesn't show who has read each message. Add per-message read indicators (checkmarks, avatar list on hover).
+
+12. **45. Block/Mute Users**
+    No user-level blocking. Requires new schema, API, and client-side message filtering for blocked users.
+
+13. **46. Keyboard Shortcuts**
+    No keyboard navigation. Add `Cmd+K` / `Ctrl+K` for search, `@mention` autocomplete, and chat navigation shortcuts.
+
+14. **47. Full-Text Message Search**
+    Search box exists but only filters client-side. Add a backend `tsvector`/`tsquery` full-text search index and search results UI with message jumping. Benefits from keyboard shortcut (#46) for discovery.
+
+15. **48. Thread View**
+    Schema supports `parentId` for replies but there's no expandable thread UI. Add a thread panel/drawer that shows the full reply chain for a message.
+
+16. **49. Call Flow Completion**
+    Voice call hooks and modal exist but the accept/reject/missed-call flow is incomplete. Finish WebRTC signaling, ringtone, and multi-screen call UI.
