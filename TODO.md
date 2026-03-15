@@ -144,8 +144,8 @@
 8. **41. Markdown & Code Highlighting**
    Messages render as plain text. Add markdown parsing (bold, italic, links, lists) and syntax-highlighted code blocks using a lightweight library.
 
-9. **42. Add Members After Creation**
-   No way to invite new members to an existing group chat. Add a search/invite UI in the members panel that reuses the existing invitation API.
+### ~~42. Add Members After Creation~~ DONE
+~~No way to invite new members to an existing group chat.~~ Admin-only `+` button in MembersPanel header opens an inline invite-by-email form. If the user has an account they are added directly as a write member (`POST /api/chat/[chatId]/invite`); if not, an invitation record is created and a signup email is sent. Member list auto-refreshes on success.
 
 10. **43. Message Pinning**
     No ability to pin important messages. Requires new schema (`pinned_at` column or `pinned_messages` table), API endpoints, and a pinned messages panel in the chat UI.
@@ -154,8 +154,8 @@
 
 ## 🔵 Lower Priority — Advanced features
 
-11. **44. Read Receipts UI**
-    Schema has `read_receipts` table but the UI doesn't show who has read each message. Add per-message read indicators (checkmarks, avatar list on hover).
+### ~~44. Read Receipts UI~~ DONE
+~~No read indicator in the UI.~~ `GET /api/chat/[chatId]/read-receipts` returns receipts with display names. Receipts fetched on chat open and kept live via `read_receipts` Realtime subscription. `chatStore` holds receipts keyed by chatId. The last own message seen by at least one other member shows "Seen by X, Y" beneath it in italic muted text. Truncates to "Seen by A, B +N more" for long lists.
 
 12. **45. Block/Mute Users**
     No user-level blocking. Requires new schema, API, and client-side message filtering for blocked users.
@@ -171,3 +171,6 @@
 
 16. **49. Call Flow Completion**
     Voice call hooks and modal exist but the accept/reject/missed-call flow is incomplete. Finish WebRTC signaling, ringtone, and multi-screen call UI.
+
+17. **53. Contacts Master Data**
+    No contacts system. Add a `contacts` table (user → contact with optional nickname/notes) and a Contacts page in settings. Once contacts exist, invite flows (new chat, add member) can show a contact picker so users select from their saved contacts instead of typing emails manually. Requires DB migration `contacts` table + API endpoints + UI.

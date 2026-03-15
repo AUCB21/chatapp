@@ -13,6 +13,9 @@ export type ReactionGroup = Record<string, { count: number; users: string[] }>;
 /** Attachment with a signed URL for display */
 export type AttachmentWithUrl = Attachment & { signedUrl?: string | null };
 
+/** Read receipt with display name for UI */
+export type ReadReceiptEntry = { userId: string; displayName: string; lastReadAt: string };
+
 export interface ChatState {
   // Data
   chats: ChatWithRole[];
@@ -21,6 +24,7 @@ export interface ChatState {
   memberships: Record<string, ChatRole>; // chatId → user's role (incl. "pending")
   reactions: Record<string, Reaction[]>; // keyed by chatId
   attachments: Record<string, Record<string, AttachmentWithUrl[]>>; // chatId → messageId → attachments
+  readReceipts: Record<string, ReadReceiptEntry[]>; // chatId → receipts
   unreadCounts: Record<string, number>; // chatId → unread message count
   hasMoreMessages: Record<string, boolean>; // chatId → whether older messages exist
   booted: boolean; // true after boot preload completes
@@ -53,6 +57,7 @@ export interface ChatState {
   removeReaction: (chatId: string, reactionId: string) => void;
   setMembership: (chatId: string, role: ChatRole) => void;
   removeMembership: (chatId: string) => void;
+  setReadReceipts: (chatId: string, receipts: ReadReceiptEntry[]) => void;
   setUnreadCounts: (counts: Record<string, number>) => void;
   setUnreadCount: (chatId: string, count: number) => void;
   incrementUnread: (chatId: string) => void;
@@ -72,6 +77,7 @@ const initialState = {
   memberships: {},
   reactions: {},
   attachments: {},
+  readReceipts: {},
   unreadCounts: {},
   hasMoreMessages: {},
   booted: false,
@@ -320,6 +326,15 @@ export const useChatStore = create<ChatState>()(
           "removeMembership"
         ),
 
+      setReadReceipts: (chatId, receipts) =>
+        set(
+          (state) => ({
+            readReceipts: { ...state.readReceipts, [chatId]: receipts },
+          }),
+          false,
+          "setReadReceipts"
+        ),
+
       setUnreadCounts: (counts) =>
         set(
           () => ({ unreadCounts: counts }),
@@ -399,6 +414,7 @@ export const useChatStore = create<ChatState>()(
 
 const EMPTY_MESSAGES: Message[] = [];
 const EMPTY_REACTIONS: Reaction[] = [];
+const EMPTY_RECEIPTS: ReadReceiptEntry[] = [];
 
 export const selectActiveChat = (state: ChatState) =>
   state.chats.find((c) => c.id === state.activeChatId) ?? null;
@@ -412,6 +428,11 @@ export const selectActiveReactions = (state: ChatState) =>
   state.activeChatId
     ? (state.reactions[state.activeChatId] ?? EMPTY_REACTIONS)
     : EMPTY_REACTIONS;
+
+export const selectActiveReadReceipts = (state: ChatState) =>
+  state.activeChatId
+    ? (state.readReceipts[state.activeChatId] ?? EMPTY_RECEIPTS)
+    : EMPTY_RECEIPTS;
 
 /** Group reactions by messageId → emoji → { count, users[] } */
 export function groupReactions(

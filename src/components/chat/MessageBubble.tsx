@@ -5,7 +5,7 @@ import { Pencil, Trash2, FileText, Download, Film, Music } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { Message } from "@/db/schema";
-import type { ReactionGroup, AttachmentWithUrl } from "@/store/chatStore";
+import type { ReactionGroup, AttachmentWithUrl, ReadReceiptEntry } from "@/store/chatStore";
 
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🎉"];
 const FENCED_CODE_REGEX = /```([\w+-]*)\n?([\s\S]*?)```/g;
@@ -247,6 +247,8 @@ interface MessageBubbleProps {
   onEdit: () => void;
   onDeleteForMe: () => void;
   onDeleteForEveryone: () => void;
+  /** Readers (other than the sender) who have seen this message */
+  seenBy?: ReadReceiptEntry[];
 }
 
 function MessageBubble({
@@ -275,6 +277,7 @@ function MessageBubble({
   onEdit,
   onDeleteForMe,
   onDeleteForEveryone,
+  seenBy,
 }: MessageBubbleProps) {
   const [deletePickerOpen, setDeletePickerOpen] = useState(false);
   const isFailed = msg.id.startsWith("failed-");
@@ -526,6 +529,18 @@ function MessageBubble({
                 </button>
               );
             })}
+          </div>
+        )}
+
+        {/* Seen by — shown only on own messages when others have read past it */}
+        {isOwn && seenBy && seenBy.length > 0 && (
+          <div className="flex justify-end mt-0.5 px-1">
+            <span className="text-[0.6rem] text-muted-foreground/70 italic">
+              Seen by{" "}
+              {seenBy.length <= 3
+                ? seenBy.map((r) => r.displayName).join(", ")
+                : `${seenBy.slice(0, 2).map((r) => r.displayName).join(", ")} +${seenBy.length - 2} more`}
+            </span>
           </div>
         )}
       </div>

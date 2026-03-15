@@ -8,7 +8,7 @@ import { usePresence } from "@/hooks/usePresence";
 import { useBootLoader } from "@/hooks/useBootLoader";
 import { useIdleDetector } from "@/hooks/useIdleDetector";
 import { useSessionStore } from "@/store/sessionStore";
-import { groupReactions, useChatStore } from "@/store/chatStore";
+import { groupReactions, useChatStore, selectActiveReadReceipts } from "@/store/chatStore";
 import { useProfileStore, selectIsDnd, selectProfileStatus } from "@/store/profileStore";
 import { unlockAudio } from "@/lib/sounds";
 import { useScreenShare } from "@/hooks/useScreenShare";
@@ -156,6 +156,7 @@ function ChatPage() {
   const chatAttachments = useChatStore(
     useCallback((s) => (activeChatId ? s.attachments[activeChatId] : undefined), [activeChatId])
   );
+  const readReceipts = useChatStore(selectActiveReadReceipts);
   const totalUnread = useMemo(
     () => Object.values(unreadCounts).reduce((a, b) => a + b, 0),
     [unreadCounts]
@@ -464,6 +465,35 @@ function ChatPage() {
     [messages, searchMode, searchQuery]
   );
 
+  // The ID of the last own message that others have seen (for read receipt display)
+  const lastReadOwnMsgId = useMemo(() => {
+    if (!user?.id || readReceipts.length === 0) return null;
+    // Find the last own message where at least one other user's lastReadAt >= createdAt
+    for (let i = displayMessages.length - 1; i >= 0; i--) {
+      const m = displayMessages[i];
+      const isOwn = m.userId === user.id || m.userId === "optimistic";
+      if (!isOwn || m.id.startsWith("optimistic-") || m.id.startsWith("failed-")) continue;
+      const msgTime = new Date(m.createdAt).getTime();
+      const seen = readReceipts.filter(
+        (r) => r.userId !== user.id && new Date(r.lastReadAt).getTime() >= msgTime
+      );
+      if (seen.length > 0) return m.id;
+    }
+    return null;
+  }, [displayMessages, readReceipts, user?.id]);
+
+  // Map msgId → readers for the lastReadOwnMsgId
+  const seenByMap = useMemo(() => {
+    if (!lastReadOwnMsgId || !user?.id) return {} as Record<string, typeof readReceipts>;
+    const msgTime = new Date(
+      displayMessages.find((m) => m.id === lastReadOwnMsgId)?.createdAt ?? 0
+    ).getTime();
+    const seen = readReceipts.filter(
+      (r) => r.userId !== user.id && new Date(r.lastReadAt).getTime() >= msgTime
+    );
+    return { [lastReadOwnMsgId]: seen };
+  }, [lastReadOwnMsgId, displayMessages, readReceipts, user?.id]);
+
   /* ── Render ── */
 
   return (
@@ -729,6 +759,7 @@ function ChatPage() {
                               }}
                               onDeleteForMe={() => handleDelete(msg.id, "for_me")}
                               onDeleteForEveryone={() => handleDelete(msg.id, "for_everyone")}
+                              seenBy={seenByMap[msg.id]}
                             />
                           </div>
                         );

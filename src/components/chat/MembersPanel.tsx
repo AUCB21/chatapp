@@ -16,7 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LogOut, Pencil } from "lucide-react";
+import { Check, LogOut, Pencil, UserPlus, X } from "lucide-react";
 import type { MemberRole } from "@/db/schema";
 
 interface Member {
@@ -117,6 +117,43 @@ export default function MembersPanel({
   const [editValue, setEditValue] = useState("");
   const editRef = useRef<HTMLInputElement>(null);
 
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteStatus, setInviteStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [inviteError, setInviteError] = useState<string | null>(null);
+
+  async function handleInvite(e: React.FormEvent) {
+    e.preventDefault();
+    const email = inviteEmail.trim();
+    if (!email) return;
+    setInviteStatus("loading");
+    setInviteError(null);
+    try {
+      const res = await fetch(`/api/chat/${chatId}/invite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, role: "write" }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setInviteError(json.error ?? "Failed to invite");
+        setInviteStatus("error");
+        return;
+      }
+      setInviteStatus("success");
+      setInviteEmail("");
+      // Refresh member list in case user was added directly
+      fetchMembers();
+      setTimeout(() => {
+        setInviteStatus("idle");
+        setInviteOpen(false);
+      }, 1500);
+    } catch {
+      setInviteError("Network error");
+      setInviteStatus("error");
+    }
+  }
+
   function handleNicknameSave(userId: string) {
     const trimmed = editValue.trim();
     const member = members.find((m) => m.userId === userId);
@@ -165,9 +202,64 @@ export default function MembersPanel({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-[20rem] sm:w-88 p-0 flex flex-col">
         <SheetHeader className="px-4 pt-4 pb-3 border-b border-border">
-          <SheetTitle className="text-sm font-semibold">
-            Members{!loading && ` (${members.length})`}
-          </SheetTitle>
+          <div className="flex items-center justify-between">
+            <SheetTitle className="text-sm font-semibold">
+              Members{!loading && ` (${members.length})`}
+            </SheetTitle>
+            {isAdmin && chatType === "group" && (
+              <button
+                onClick={() => { setInviteOpen((v) => !v); setInviteStatus("idle"); setInviteError(null); }}
+                className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                title="Invite member"
+              >
+                <UserPlus className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {isAdmin && inviteOpen && (
+            <form onSubmit={handleInvite} className="mt-2 flex flex-col gap-1.5">
+              <div className="flex gap-1.5">
+                <input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="user@example.com"
+                  disabled={inviteStatus === "loading" || inviteStatus === "success"}
+                  className="flex-1 text-sm bg-muted/60 border border-border rounded-md px-2.5 py-1 outline-none focus:ring-1 focus:ring-ring/40 disabled:opacity-50"
+                />
+                <button
+                  type="submit"
+                  disabled={inviteStatus === "loading" || inviteStatus === "success" || !inviteEmail.trim()}
+                  className="w-8 h-8 flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 transition-opacity"
+                >
+                  {inviteStatus === "loading" ? (
+                    <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                  ) : inviteStatus === "success" ? (
+                    <Check className="w-3.5 h-3.5" />
+                  ) : (
+                    <UserPlus className="w-3.5 h-3.5" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setInviteOpen(false); setInviteEmail(""); setInviteStatus("idle"); setInviteError(null); }}
+                  className="w-8 h-8 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              {inviteStatus === "success" && (
+                <p className="text-[0.65rem] text-emerald-500">Invited successfully!</p>
+              )}
+              {inviteStatus === "error" && inviteError && (
+                <p className="text-[0.65rem] text-destructive">{inviteError}</p>
+              )}
+            </form>
+          )}
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto">

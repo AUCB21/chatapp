@@ -143,6 +143,7 @@ export function useChat(): UseChatReturn {
     setError,
     setHasMore,
     setUnreadCounts,
+    setReadReceipts,
   } = useChatStore();
 
   const messages = useChatStore(selectActiveMessages);
@@ -489,6 +490,14 @@ export function useChat(): UseChatReturn {
         setLoading("messages", false);
       }
 
+      // Fetch read receipts (fire-and-forget, non-blocking)
+      fetch(`/api/chat/${activeId}/read-receipts`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((json) => {
+          if (json?.data?.receipts) setReadReceipts(activeId, json.data.receipts);
+        })
+        .catch(() => {});
+
       const isReactionForActiveChat = (messageId: string) =>
         useChatStore
           .getState()
@@ -643,6 +652,25 @@ export function useChat(): UseChatReturn {
           (payload) => {
             const data = payload.payload as { reactionId: string; messageId: string };
             removeReactionFromStore(activeId, data.reactionId);
+          }
+        )
+        // Read receipts update (when another member reads messages)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "read_receipts",
+            filter: `chat_id=eq.${activeId}`,
+          },
+          () => {
+            // Re-fetch receipts silently
+            fetch(`/api/chat/${activeId}/read-receipts`)
+              .then((r) => r.ok ? r.json() : null)
+              .then((json) => {
+                if (json?.data?.receipts) setReadReceipts(activeId, json.data.receipts);
+              })
+              .catch(() => {});
           }
         )
         .subscribe();
