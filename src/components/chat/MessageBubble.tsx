@@ -1,7 +1,7 @@
 "use client";
 
-import { Fragment, memo, useMemo, useState, type ReactNode } from "react";
-import { Pencil, Trash2, FileText, Download, Film, Music, MessageSquare } from "lucide-react";
+import { Fragment, memo, useMemo, useState, useEffect, type ReactNode } from "react";
+import { Pencil, Trash2, FileText, Download, Film, Music, MessageSquare, Code2, ChevronDown, ChevronUp } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { Message } from "@/db/schema";
@@ -288,18 +288,142 @@ function renderMarkdownText(text: string, keyPrefix: string, isOwn: boolean): Re
 
 function highlightCode(code: string, language?: string): string {
   try {
-    if (language) {
+    if (language && hljs.getLanguage(language)) {
       return hljs.highlight(code, { language }).value;
     }
-  } catch {
-    // language not registered, fall through to auto
-  }
-  try {
     return hljs.highlightAuto(code).value;
   } catch {
     // fallback to plain text
     return code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
+}
+
+/** Map file extension → highlight.js language name */
+const EXT_TO_LANG: Record<string, string> = {
+  js: "javascript", jsx: "javascript", mjs: "javascript", cjs: "javascript",
+  ts: "typescript", tsx: "typescript", mts: "typescript",
+  py: "python", pyw: "python",
+  go: "go",
+  rs: "rust",
+  java: "java",
+  html: "html", htm: "html", svg: "html",
+  xml: "xml", xsl: "xml",
+  css: "css", scss: "css", less: "css",
+  json: "json", jsonc: "json",
+  sh: "bash", bash: "bash", zsh: "bash",
+  sql: "sql",
+  c: "c", h: "c",
+  cpp: "cpp", cc: "cpp", cxx: "cpp", hpp: "cpp",
+  cs: "csharp",
+  rb: "ruby", rake: "ruby",
+  php: "php",
+  yaml: "yaml", yml: "yaml",
+  md: "markdown", mdx: "markdown",
+  diff: "diff", patch: "diff",
+};
+
+/** MIME types that indicate code/text files */
+const CODE_MIME_TYPES = new Set([
+  "text/plain", "text/html", "text/css", "text/javascript", "text/csv", "text/markdown",
+  "text/xml", "text/x-python",
+  "application/javascript", "application/json", "application/xml",
+  "application/x-yaml", "application/x-httpd-php", "application/x-sh", "application/x-python",
+]);
+
+function getLanguageFromFileName(fileName: string): string | undefined {
+  const ext = fileName.split(".").pop()?.toLowerCase();
+  return ext ? EXT_TO_LANG[ext] : undefined;
+}
+
+function isCodeAttachment(mimeType: string, fileName: string): boolean {
+  if (CODE_MIME_TYPES.has(mimeType)) return true;
+  const ext = fileName.split(".").pop()?.toLowerCase();
+  return !!ext && ext in EXT_TO_LANG;
+}
+
+const MAX_PREVIEW_LINES = 12;
+
+function CodePreview({ src, fileName, isOwn }: { src: string; fileName: string; isOwn: boolean }) {
+  const [code, setCode] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!src) return;
+    setLoading(true);
+    setError(false);
+    fetch(src)
+      .then((r) => {
+        if (!r.ok) throw new Error();
+        return r.text();
+      })
+      .then((text) => { setCode(text); setLoading(false); })
+      .catch(() => { setError(true); setLoading(false); });
+  }, [src]);
+
+  const language = getLanguageFromFileName(fileName);
+  const highlighted = useMemo(
+    () => (code ? highlightCode(code, language) : ""),
+    [code, language]
+  );
+
+  const lines = code?.split("\n") ?? [];
+  const needsTruncation = lines.length > MAX_PREVIEW_LINES;
+  const displayHtml = useMemo(() => {
+    if (!code) return "";
+    if (!needsTruncation || expanded) return highlighted;
+    const truncated = lines.slice(0, MAX_PREVIEW_LINES).join("\n");
+    return highlightCode(truncated, language);
+  }, [code, highlighted, needsTruncation, expanded, lines, language]);
+
+  if (loading) {
+    return (
+      <div className={`rounded-xl border border-border/60 overflow-hidden ${isOwn ? "bg-black/20" : "bg-muted/30"}`}>
+        <div className="flex items-center gap-2 px-3 py-2">
+          <svg className="w-3.5 h-3.5 animate-spin text-muted-foreground" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+          </svg>
+          <span className="text-[0.65rem] text-muted-foreground">Loading preview…</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !code) return null;
+
+  return (
+    <div className="rounded-xl border border-border/60 overflow-hidden text-left">
+      <div className="flex items-center justify-between border-b border-border/60 bg-muted/50 px-3 py-1.5">
+        <div className="flex items-center gap-1.5">
+          <Code2 className="w-3 h-3 text-muted-foreground" />
+          <span className="font-mono text-[0.55rem] uppercase tracking-[0.15em] text-muted-foreground">
+            {language ?? fileName.split(".").pop() ?? "code"}
+          </span>
+        </div>
+        <span className="text-[0.55rem] text-muted-foreground">{lines.length} lines</span>
+      </div>
+      <pre className={`hljs overflow-x-auto px-3 py-2.5 text-[0.7rem] leading-relaxed ${
+        isOwn ? "bg-black/20 text-white/90" : "bg-muted/30 text-foreground"
+      }`}>
+        <code
+          className="font-mono whitespace-pre"
+          dangerouslySetInnerHTML={{ __html: displayHtml }}
+        />
+      </pre>
+      {needsTruncation && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="w-full flex items-center justify-center gap-1 py-1.5 border-t border-border/60 bg-muted/30 text-[0.6rem] text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          {expanded ? "Show less" : `Show all ${lines.length} lines`}
+        </button>
+      )}
+    </div>
+  );
 }
 
 function renderMarkdownMessage(content: string, isOwn: boolean) {
@@ -360,8 +484,11 @@ function AttachmentGrid({
   const mediaFiles = files.filter(
     (a) => a.mimeType.startsWith("video/") || a.mimeType.startsWith("audio/")
   );
+  const codeFiles = files.filter(
+    (a) => !a.mimeType.startsWith("video/") && !a.mimeType.startsWith("audio/") && isCodeAttachment(a.mimeType, a.fileName)
+  );
   const otherFiles = files.filter(
-    (a) => !a.mimeType.startsWith("video/") && !a.mimeType.startsWith("audio/")
+    (a) => !a.mimeType.startsWith("video/") && !a.mimeType.startsWith("audio/") && !isCodeAttachment(a.mimeType, a.fileName)
   );
 
   return (
@@ -406,6 +533,30 @@ function AttachmentGrid({
                 </p>
               </div>
             </button>
+          ))}
+        </div>
+      )}
+      {codeFiles.length > 0 && (
+        <div className="space-y-1.5">
+          {codeFiles.map((att) => (
+            <div key={att.id}>
+              <div className="flex items-center gap-2 px-2 py-1">
+                <Code2 className={`w-3.5 h-3.5 shrink-0 ${isOwn ? "text-primary-foreground/60" : "text-muted-foreground"}`} />
+                <span className={`text-xs font-medium truncate ${isOwn ? "text-primary-foreground" : "text-foreground"}`}>{att.fileName}</span>
+                <span className={`text-[0.6rem] ${isOwn ? "text-primary-foreground/40" : "text-muted-foreground"}`}>{formatFileSize(att.fileSize)}</span>
+                <a
+                  href={att.signedUrl ?? "#"}
+                  target="_blank"
+                  rel="noreferrer"
+                  download={att.fileName}
+                  onClick={(e) => e.stopPropagation()}
+                  className={`ml-auto ${isOwn ? "text-primary-foreground/50 hover:text-primary-foreground" : "text-muted-foreground hover:text-foreground"} transition-colors`}
+                >
+                  <Download className="w-3 h-3" />
+                </a>
+              </div>
+              <CodePreview src={att.signedUrl ?? ""} fileName={att.fileName} isOwn={isOwn} />
+            </div>
           ))}
         </div>
       )}

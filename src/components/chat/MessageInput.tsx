@@ -2,7 +2,7 @@
 
 import { memo, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type DragEvent } from "react";
 import { Paperclip, Send, X, FileText, Film, Music } from "lucide-react";
-import { MAX_FILE_SIZE, MAX_FILES_PER_MESSAGE, ALLOWED_MIME_TYPES } from "@/lib/validation";
+import { MAX_FILE_SIZE, MAX_FILES_PER_MESSAGE, ALLOWED_MIME_TYPES, CODE_FILE_EXTENSIONS } from "@/lib/validation";
 
 interface MessageInputProps {
   canWrite: boolean;
@@ -60,7 +60,8 @@ function MessageInput({
         setFileError(`"${file.name}" exceeds 10 MB limit`);
         continue;
       }
-      if (!ALLOWED_MIME_TYPES.has(file.type)) {
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+      if (!ALLOWED_MIME_TYPES.has(file.type) && !CODE_FILE_EXTENSIONS.has(ext)) {
         setFileError(`"${file.name}" — file type not allowed`);
         continue;
       }
