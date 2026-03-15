@@ -96,5 +96,8 @@
 8. **49. Call Flow Completion**
    Finish WebRTC signaling, ringtone, multi-screen call UI. Full-screen call modal with avatar, controls bar (mic/video/screenshare/hangup), connection status badge. Screen sharing may need fixing.
 
-8. **57. Group Settings Modal**
+9. **59. Login / Register UI Refresh**
+   Make login and register forms more visually polished and eye-catching. Improve layout, add brand identity (logo/name), better input styling, animated transitions, and visual hierarchy. Keep all existing auth logic intact.
+
+10. **57. Group Settings Modal**
    Clicking chat title opens a unified Group Settings modal: edit group name & avatar, members list with role management (admin/write/read), permission settings (who can send messages, add members, pin), custom role creation. Replaces inline rename + separate MembersPanel.
