@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type DragEvent } from "react";
+import { memo, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type DragEvent } from "react";
 import { Paperclip, Send, X, FileText, Film, Music } from "lucide-react";
 import { MAX_FILE_SIZE, MAX_FILES_PER_MESSAGE, ALLOWED_MIME_TYPES } from "@/lib/validation";
 
@@ -25,7 +25,7 @@ function FileIcon({ mimeType }: { mimeType: string }) {
   return <FileText className="w-4 h-4" />;
 }
 
-export default function MessageInput({
+function MessageInput({
   canWrite,
   replyTo,
   onSend,
@@ -37,6 +37,7 @@ export default function MessageInput({
   const [files, setFiles] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -81,11 +82,23 @@ export default function MessageInput({
     const content = input.trim();
     if (!content && files.length === 0) return;
     const filesToSend = files.length > 0 ? [...files] : undefined;
+    const prevInput = input;
+    const prevFiles = [...files];
     setInput("");
     setFiles([]);
     setFileError(null);
     onTypingChange(false);
-    await onSend(content, filesToSend);
+    if (filesToSend) setSending(true);
+    try {
+      await onSend(content, filesToSend);
+    } catch {
+      // Restore input and files so user can retry
+      setInput(prevInput);
+      setFiles(prevFiles);
+      setFileError("Failed to send — try again");
+    } finally {
+      setSending(false);
+    }
   }
 
   function handleComposerKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -158,36 +171,40 @@ export default function MessageInput({
 
       {/* File preview strip */}
       {files.length > 0 && (
-        <div className="px-4 md:px-5 pt-3 pb-0 shrink-0">
+        <div className="px-4 md:px-5 pt-3 pb-1 shrink-0">
           <div className="flex gap-2 flex-wrap">
             {files.map((file, i) => {
               const isImage = file.type.startsWith("image/");
               return (
                 <div
                   key={`${file.name}-${i}`}
-                  className="relative group rounded-xl border border-border/60 bg-muted/40 overflow-hidden"
+                  className="relative group rounded-lg border border-border/60 bg-muted/40 overflow-hidden"
                 >
                   {isImage ? (
-                    <img
-                      src={URL.createObjectURL(file)}
-                      alt={file.name}
-                      className="w-20 h-20 object-cover"
-                      onLoad={(e) => URL.revokeObjectURL((e.target as HTMLImageElement).src)}
-                    />
+                    <div className="flex items-center gap-2 pr-6">
+                      <img
+                        src={URL.createObjectURL(file)}
+                        alt={file.name}
+                        className="w-10 h-10 rounded-lg object-cover shrink-0"
+                        onLoad={(e) => URL.revokeObjectURL((e.target as HTMLImageElement).src)}
+                      />
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium truncate">{file.name}</p>
+                        <p className="text-[0.65rem] text-muted-foreground/60">{formatFileSize(file.size)}</p>
+                      </div>
+                    </div>
                   ) : (
-                    <div className="w-20 h-20 flex flex-col items-center justify-center gap-1 px-1">
+                    <div className="flex items-center gap-2 px-2.5 py-1.5 pr-6">
                       <FileIcon mimeType={file.type} />
-                      <p className="text-[0.5rem] text-muted-foreground text-center truncate w-full">
-                        {file.name}
-                      </p>
-                      <p className="text-[0.45rem] text-muted-foreground/60">
-                        {formatFileSize(file.size)}
-                      </p>
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium truncate">{file.name}</p>
+                        <p className="text-[0.65rem] text-muted-foreground/60">{formatFileSize(file.size)}</p>
+                      </div>
                     </div>
                   )}
                   <button
                     onClick={() => removeFile(i)}
-                    className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute top-1 right-1 w-4 h-4 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     <X className="w-2.5 h-2.5" />
                   </button>
@@ -201,6 +218,17 @@ export default function MessageInput({
       {fileError && (
         <div className="px-4 md:px-5 pt-2 shrink-0">
           <p className="text-[0.65rem] text-destructive">{fileError}</p>
+        </div>
+      )}
+
+      {sending && (
+        <div className="px-4 md:px-5 pt-2 shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
+              <div className="h-full bg-primary rounded-full animate-[indeterminate_1.5s_ease-in-out_infinite]" />
+            </div>
+            <span className="text-[0.6rem] text-muted-foreground">Uploading...</span>
+          </div>
         </div>
       )}
 
@@ -249,7 +277,7 @@ export default function MessageInput({
 
         <button
           type="submit"
-          disabled={!hasContent}
+          disabled={!hasContent || sending}
           className="mb-0.5 w-9 h-9 flex items-center justify-center rounded-xl bg-primary text-primary-foreground hover:opacity-90 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
         >
           <Send className="w-4 h-4" />
@@ -258,3 +286,5 @@ export default function MessageInput({
     </>
   );
 }
+
+export default memo(MessageInput);

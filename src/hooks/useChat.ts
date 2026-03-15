@@ -167,10 +167,13 @@ export function useChat(): UseChatReturn {
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const declineRemovalTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const refreshChatsInFlightRef = useRef(false);
 
   // --- Fetch all accessible chats on mount ---
 
   const refreshChats = useCallback(async () => {
+    if (refreshChatsInFlightRef.current) return;
+    refreshChatsInFlightRef.current = true;
     setLoading("chats", true);
     setError("chats", null);
 
@@ -184,6 +187,7 @@ export function useChat(): UseChatReturn {
       setError("chats", e instanceof Error ? e.message : "Unknown error");
     } finally {
       setLoading("chats", false);
+      refreshChatsInFlightRef.current = false;
     }
   }, []);
 
@@ -446,8 +450,7 @@ export function useChat(): UseChatReturn {
       setLoading("messages", true);
       setError("messages", null);
 
-      const storeMessages = useChatStore.getState().messages;
-      const alreadyFetched = activeId in storeMessages;
+      const alreadyFetched = activeId in useChatStore.getState().messages;
       if (!alreadyFetched) {
         try {
           const res = await fetch(`/api/chat/${activeId}/messages`);
@@ -664,6 +667,44 @@ export function useChat(): UseChatReturn {
     };
   }, [isReady, activeChatId, activeMembership]);
 
+  // --- Auto-refresh signed URLs before they expire (TTL = 5 min) ---
+
+  useEffect(() => {
+    if (!isReady || !activeChatId) return;
+    const chatId = activeChatId;
+
+    // Refresh 1 minute before expiry (4 min interval)
+    const REFRESH_INTERVAL = 4 * 60 * 1000;
+
+    const timer = setInterval(async () => {
+      const chatAttachments = useChatStore.getState().attachments[chatId];
+      if (!chatAttachments) return;
+
+      const paths = Object.values(chatAttachments)
+        .flat()
+        .map((a) => a.storagePath)
+        .filter(Boolean);
+      if (paths.length === 0) return;
+
+      try {
+        const res = await fetch(`/api/chat/${chatId}/attachments/refresh-urls`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paths }),
+        });
+        if (!res.ok) return;
+        const { data } = await res.json();
+        if (data?.urls) {
+          useChatStore.getState().refreshAttachmentUrls(chatId, data.urls);
+        }
+      } catch {
+        // non-fatal
+      }
+    }, REFRESH_INTERVAL);
+
+    return () => clearInterval(timer);
+  }, [isReady, activeChatId]);
+
   // --- Send message with optimistic update ---
 
   const sendMessage = useCallback(
@@ -734,7 +775,7 @@ export function useChat(): UseChatReturn {
           event: "new-message",
           payload: { ...normalizedSavedMsg, attachments: savedMsg.attachments },
         });
-      } catch {
+      } catch (err) {
         // Mark the optimistic entry as failed instead of removing it.
         const failedMsg: Message = {
           ...optimisticMsg,
@@ -748,6 +789,9 @@ export function useChat(): UseChatReturn {
               m.id === optimisticMsg.id ? failedMsg : m
             )
         );
+
+        // Re-throw for file messages so MessageInput can restore files
+        if (hasFiles) throw err;
       }
     },
     [activeChatId, canWrite]
@@ -999,16 +1043,17 @@ export function useChat(): UseChatReturn {
 
   const deleteChatFn = useCallback(
     async (chatId: string, mode: "for_me" | "for_everyone") => {
-      const res = await fetch(`/api/chat/${chatId}`, {
+      // Optimistic: remove from UI immediately
+      removeMembership(chatId);
+
+      // Background persist
+      fetch(`/api/chat/${chatId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode }),
+      }).catch(() => {
+        // silent — chat already removed from view
       });
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.error ?? "Failed to delete chat");
-      }
-      removeMembership(chatId);
     },
     [removeMembership]
   );

@@ -1,10 +1,9 @@
 "use client";
 
-import { Fragment, useMemo, useState, type ReactNode } from "react";
+import { Fragment, memo, useMemo, useState, type ReactNode } from "react";
 import { Pencil, Trash2, FileText, Download, Film, Music } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useProfileStore } from "@/store/profileStore";
 import type { Message } from "@/db/schema";
 import type { ReactionGroup, AttachmentWithUrl } from "@/store/chatStore";
 
@@ -250,7 +249,7 @@ interface MessageBubbleProps {
   onDeleteForEveryone: () => void;
 }
 
-export default function MessageBubble({
+function MessageBubble({
   msg,
   isOwn,
   isOptimistic,
@@ -277,7 +276,6 @@ export default function MessageBubble({
   onDeleteForMe,
   onDeleteForEveryone,
 }: MessageBubbleProps) {
-  const accentChat = useProfileStore((s) => s.profile?.accentChat);
   const [deletePickerOpen, setDeletePickerOpen] = useState(false);
   const isFailed = msg.id.startsWith("failed-");
   const isEditing = editContent !== null;
@@ -344,14 +342,13 @@ export default function MessageBubble({
           </div>
         ) : (
           <div
-            className={`group/message relative px-4 py-2.5 rounded-2xl text-sm leading-relaxed transition-all ${
+            className={`group/message relative px-4 py-2.5 rounded-2xl text-sm leading-relaxed transition-all duration-300 ease-in-out ${
               isOwn
                 ? `bg-primary text-primary-foreground rounded-br-sm shadow-sm shadow-primary/20 ${
                     isFailed ? "opacity-60" : isOptimistic ? "optimistic-pulse" : ""
                   }`
                 : "bg-card border border-border rounded-bl-sm shadow-sm"
             } ${isDeleted ? "opacity-40 italic" : ""}`}
-            style={isOwn && accentChat ? { backgroundColor: accentChat } : undefined}
           >
             {/* Attachments */}
             {attachments && attachments.length > 0 && (
@@ -361,7 +358,13 @@ export default function MessageBubble({
             )}
 
             <div className="flex items-end gap-1.5">
-              <div className="space-y-1 min-w-0">{msg.content ? renderedContent : null}</div>
+              <div className="space-y-1 min-w-0">
+                {msg.content
+                  ? renderedContent
+                  : !attachments?.length && !isDeleted
+                    ? <span className="text-xs italic opacity-50">[Attachment]</span>
+                    : null}
+              </div>
               <div className="flex items-center gap-1 shrink-0 self-end mb-0.5">
                 {isEdited && (
                   <span className="text-[0.55rem] opacity-50 font-medium uppercase tracking-wider">edited</span>
@@ -529,3 +532,5 @@ export default function MessageBubble({
     </div>
   );
 }
+
+export default memo(MessageBubble);

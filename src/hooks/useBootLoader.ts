@@ -136,16 +136,17 @@ export function useBootLoader(): BootState {
 
         if (cancelled) return;
 
-        const { setMessages, setReactions, setHasMore } = useChatStore.getState();
+        const { setMessages, setReactions, setAttachments, setHasMore } = useChatStore.getState();
         for (const result of results) {
           if (result.status !== "fulfilled" || !result.value) continue;
           const { chatId, data } = result.value as {
             chatId: string;
-            data: { messages?: MessagePayload[]; reactions?: Reaction[]; hasMore?: boolean };
+            data: { messages?: MessagePayload[]; reactions?: Reaction[]; hasMore?: boolean; attachments?: Record<string, unknown[]> };
           };
           if (data.messages) {
             setMessages(chatId, data.messages.map(normalizeMessage));
             setReactions(chatId, data.reactions ?? []);
+            if (data.attachments) setAttachments(chatId, data.attachments as Record<string, import("@/store/chatStore").AttachmentWithUrl[]>);
             setHasMore(chatId, data.hasMore ?? false);
           }
         }

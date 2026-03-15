@@ -16,7 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Pencil } from "lucide-react";
+import { LogOut, Pencil } from "lucide-react";
 import type { MemberRole } from "@/db/schema";
 
 interface Member {
@@ -31,10 +31,12 @@ interface Member {
 
 interface MembersPanelProps {
   chatId: string;
+  chatType: "direct" | "group";
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentUserId: string;
   currentUserRole: string;
+  onLeaveGroup?: () => void;
 }
 
 const ROLE_BADGE: Record<MemberRole, { label: string; className: string }> = {
@@ -68,14 +70,15 @@ function getAvatarColor(str: string) {
 
 export default function MembersPanel({
   chatId,
+  chatType,
   open,
   onOpenChange,
   currentUserId,
   currentUserRole,
+  onLeaveGroup,
 }: MembersPanelProps) {
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(false);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const isAdmin = currentUserRole === "admin";
 
   const fetchMembers = useCallback(async () => {
@@ -97,86 +100,65 @@ export default function MembersPanel({
     if (open) fetchMembers();
   }, [open, fetchMembers]);
 
-  async function handleChangeRole(userId: string, newRole: MemberRole) {
-    setActionLoading(userId);
-    try {
-      const res = await fetch(`/api/chat/${chatId}/members`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, role: newRole }),
-      });
-      if (res.ok) {
-        setMembers((prev) =>
-          prev.map((m) => (m.userId === userId ? { ...m, role: newRole } : m))
-        );
-      }
-    } catch {
-      // silent
-    } finally {
-      setActionLoading(null);
-    }
+  function handleChangeRole(userId: string, newRole: MemberRole) {
+    // Optimistic update
+    setMembers((prev) =>
+      prev.map((m) => (m.userId === userId ? { ...m, role: newRole } : m))
+    );
+    // Background persist
+    fetch(`/api/chat/${chatId}/members`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, role: newRole }),
+    }).catch(() => {});
   }
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const editRef = useRef<HTMLInputElement>(null);
 
-  async function handleNicknameSave(userId: string) {
+  function handleNicknameSave(userId: string) {
     const trimmed = editValue.trim();
     const member = members.find((m) => m.userId === userId);
     if (!member) return;
 
-    // null clears the override, empty string also clears
     const newName = trimmed || null;
     if (newName === member.chatDisplayName) {
       setEditingId(null);
       return;
     }
 
-    setActionLoading(userId);
-    try {
-      const res = await fetch(`/api/chat/${chatId}/profile`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, displayName: newName }),
-      });
-      if (res.ok) {
-        setMembers((prev) =>
-          prev.map((m) =>
-            m.userId === userId
-              ? {
-                  ...m,
-                  chatDisplayName: newName,
-                  displayName: newName ?? m.globalDisplayName ?? m.email.split("@")[0],
-                }
-              : m
-          )
-        );
-      }
-    } catch {
-      // silent
-    } finally {
-      setActionLoading(null);
-      setEditingId(null);
-    }
+    // Optimistic update
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.userId === userId
+          ? {
+              ...m,
+              chatDisplayName: newName,
+              displayName: newName ?? m.globalDisplayName ?? m.email.split("@")[0],
+            }
+          : m
+      )
+    );
+    setEditingId(null);
+
+    // Background persist
+    fetch(`/api/chat/${chatId}/profile`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, displayName: newName }),
+    }).catch(() => {});
   }
 
-  async function handleRemove(userId: string) {
-    setActionLoading(userId);
-    try {
-      const res = await fetch(`/api/chat/${chatId}/members`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
-      });
-      if (res.ok) {
-        setMembers((prev) => prev.filter((m) => m.userId !== userId));
-      }
-    } catch {
-      // silent
-    } finally {
-      setActionLoading(null);
-    }
+  function handleRemove(userId: string) {
+    // Optimistic update
+    setMembers((prev) => prev.filter((m) => m.userId !== userId));
+    // Background persist
+    fetch(`/api/chat/${chatId}/members`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    }).catch(() => {});
   }
 
   return (
@@ -280,7 +262,6 @@ export default function MembersPanel({
                           <DropdownMenuTrigger asChild>
                             <button
                               className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors opacity-0 group-hover:opacity-100"
-                              disabled={actionLoading === member.userId}
                               aria-label="Member actions"
                             >
                               <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 16 16">
@@ -329,6 +310,18 @@ export default function MembersPanel({
             </ul>
           )}
         </div>
+
+        {chatType === "group" && !isAdmin && onLeaveGroup && (
+          <div className="shrink-0 px-4 py-3 border-t border-border">
+            <button
+              onClick={onLeaveGroup}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              Leave group
+            </button>
+          </div>
+        )}
       </SheetContent>
     </Sheet>
   );

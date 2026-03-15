@@ -97,6 +97,15 @@
 ### ~~32. Password Strength Validator~~ DONE
 ~~No password strength enforcement.~~ `PASSWORD_RULES` array with real-time UI checklist on register and reset-password pages. Minimum 10 chars, uppercase, lowercase, special character. Shared `passwordSchema` Zod validator.
 
+### ~~50. Performance: Memoization & Re-render Reduction~~ DONE
+~~No memoization on computed values or stable references for callbacks.~~ Applied `useMemo` to `reactionGrouped`, `activeChat`, `totalUnread`, `displayMessages` (search filter), and the `chatAttachments` Zustand selector. Wrapped all event handlers in `page.tsx` with `useCallback`. Wrapped `MessageBubble`, `ChatSidebar`, `ChatHeader`, and `MessageInput` with `React.memo` to skip re-renders when their props are unchanged. Added `selectProfileStatus` stable selector to `profileStore`. Added in-flight deduplication guard to `refreshChats` in `useChat.ts` to prevent parallel duplicate chat-list fetches triggered by concurrent Realtime events.
+
+### ~~51. Optimistic UI Across All Actions~~ DONE
+~~Many buttons waited for API response before updating UI.~~ All selectors/buttons now update visually immediately (optimistic): profile fields, status, accent colors, chat rename, role changes, nickname edits, member removal, and chat deletion. API calls fire in the background. Color picker now uses draft/persisted state with Save/Revert buttons so live preview is decoupled from server state.
+
+### ~~52. Global CSS Accent Color System~~ DONE
+~~Accent colors were applied per-component via inline styles.~~ `AccentColorProvider` overrides CSS theme variables (`--background`, `--foreground`, `--card-foreground`, `--primary`) directly on `:root`, so all Tailwind classes pick them up automatically. Live preview works globally (chat bubbles, background, font) with smooth CSS transitions. Surface layers (card, popover, sidebar) use alpha opacity for a frosted glass feel. Settings rendered as a Sheet overlay so the chat stays visible during color preview.
+
 ### ~~16. File / Image Sharing~~ DONE
 ~~The `<Paperclip>` button is rendered but does nothing.~~ Full file/image sharing via Supabase Storage. FormData upload (max 10 files, 10 MB each), MIME allowlist, `attachments` table with cascade delete, signed URLs (5-min TTL), drag-and-drop, image thumbnails + file cards in MessageBubble, realtime broadcast, storage cleanup on message deletion. ⚠️ Requires migration `0014_attachments.sql` on Supabase + `chat-attachments` private bucket.
 
@@ -107,22 +116,20 @@
 
 ## 🔴 High Priority — Quick wins & core gaps
 
-### Execution Order (least complex first, dependencies respected)
+### ~~34. Signed URL Auto-Refresh~~ DONE
+~~Attachment URLs expire after 5 min.~~ Client-side 4-min interval re-fetches signed URLs for the active chat, restoring images/downloads without a page reload.
 
-1. **34. Signed URL Auto-Refresh**
-   Attachment URLs expire after 5 min. If a chat stays open longer, images break and downloads fail. Add a client-side refresh mechanism (re-fetch signed URLs on demand or on a timer).
+### ~~35. Leave Group~~ DONE
+~~Non-admin users had no way to leave a group chat.~~ "Leave group" option added to members panel with confirmation, calls `deleteChat("for_me")` optimistically.
 
-2. **35. Leave Group**
-   Non-admin users have no way to leave a group chat — they can only be removed by an admin. Add a "Leave group" option in the chat menu/members panel with confirmation modal.
+### ~~36. Edit Group Name~~ DONE
+~~No way to rename a group chat after creation.~~ `PATCH /api/chat/[chatId]` endpoint added (admin-only). Inline edit UI in ChatHeader. Rename is optimistic.
 
-3. **36. Edit Group Name**
-   No way to rename a group chat after creation. Add `PATCH /api/chat/[chatId]` endpoint (admin-only) and inline edit UI in the chat header or settings.
+### ~~37. Retry Failed Uploads~~ DONE
+~~File upload errors showed no retry action.~~ Retry button added to failed attachment cards in MessageInput file preview strip.
 
-4. **37. Retry Failed Uploads**
-   File upload errors show a message but no retry action. Add a retry button on failed attachment uploads in the MessageInput file preview strip.
-
-5. **38. File Upload Progress Bar**
-   No visual feedback during file uploads. Replace `fetch` with `XMLHttpRequest` or a progress-aware wrapper to show per-file upload progress in the preview strip.
+### ~~38. File Upload Progress Bar~~ DONE
+~~No visual feedback during file uploads.~~ Per-file progress bar shown in the preview strip using `XMLHttpRequest` upload progress events.
 
 ---
 

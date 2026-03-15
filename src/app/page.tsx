@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 
 import { useChat } from "@/hooks/useChat";
@@ -9,7 +9,7 @@ import { useBootLoader } from "@/hooks/useBootLoader";
 import { useIdleDetector } from "@/hooks/useIdleDetector";
 import { useSessionStore } from "@/store/sessionStore";
 import { groupReactions, useChatStore } from "@/store/chatStore";
-import { useProfileStore, selectIsDnd } from "@/store/profileStore";
+import { useProfileStore, selectIsDnd, selectProfileStatus } from "@/store/profileStore";
 import { unlockAudio } from "@/lib/sounds";
 import { useScreenShare } from "@/hooks/useScreenShare";
 import { useVoiceCall } from "@/hooks/useVoiceCall";
@@ -71,10 +71,9 @@ function ChatPage() {
   const user = useSessionStore((s) => s.user);
   const clearSession = useSessionStore((s) => s.clearSession);
   const isDnd = useProfileStore(selectIsDnd);
-  const profileStatus = useProfileStore((s) => s.profile?.status);
-  const accentBg = useProfileStore((s) => s.profile?.accentBg);
-  const accentFont = useProfileStore((s) => s.profile?.accentFont);
-  const accentChat = useProfileStore((s) => s.profile?.accentChat);
+  const profileStatus = useProfileStore(selectProfileStatus);
+  // Accent colors are applied globally via CSS vars (AccentColorProvider)
+  // No need to read them here — just use the CSS var classes below
 
   const {
     chats,
@@ -154,11 +153,16 @@ function ChatPage() {
   const skipAutoScrollRef = useRef(false);
 
   const unreadCounts = useChatStore((s) => s.unreadCounts);
-  const chatAttachments = useChatStore((s) => activeChatId ? s.attachments[activeChatId] : undefined);
-  const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
+  const chatAttachments = useChatStore(
+    useCallback((s) => (activeChatId ? s.attachments[activeChatId] : undefined), [activeChatId])
+  );
+  const totalUnread = useMemo(
+    () => Object.values(unreadCounts).reduce((a, b) => a + b, 0),
+    [unreadCounts]
+  );
 
-  const reactionGrouped = groupReactions(reactions);
-  const activeChat = chats.find((c) => c.id === activeChatId);
+  const reactionGrouped = useMemo(() => groupReactions(reactions), [reactions]);
+  const activeChat = useMemo(() => chats.find((c) => c.id === activeChatId) ?? null, [chats, activeChatId]);
   const isPending = activeChat?.role === "pending";
   const isDeclined = activeChat?.role === "declined";
 
@@ -329,22 +333,22 @@ function ChatPage() {
     }
   }
 
-  async function handleSend(content: string, files?: File[]) {
+  const handleSend = useCallback(async (content: string, files?: File[]) => {
     stopTyping();
     await sendMessage(content, replyTo?.id, files);
     setReplyTo(null);
-  }
+  }, [stopTyping, sendMessage, replyTo?.id]);
 
-  function handleTypingChange(isTyping: boolean) {
+  const handleTypingChange = useCallback((isTyping: boolean) => {
     if (isTyping) startTyping();
     else stopTyping();
-  }
+  }, [startTyping, stopTyping]);
 
-  function handleContextMenu(
+  const handleContextMenu = useCallback((
     e: React.MouseEvent,
     msgId: string,
     isOwn: boolean
-  ) {
+  ) => {
     if (!isOwn) {
       e.preventDefault();
       setShowEmojiPicker(msgId);
@@ -353,27 +357,27 @@ function ChatPage() {
     e.preventDefault();
     setContextMenuMsgId(msgId);
     setContextMenuPos({ x: e.clientX, y: e.clientY });
-  }
+  }, []);
 
-  function handleStartEdit(msgId: string, content: string) {
+  const handleStartEdit = useCallback((msgId: string, content: string) => {
     setEditingMessageId(msgId);
     setEditContent(content);
     setContextMenuMsgId(null);
-  }
+  }, []);
 
-  async function handleSaveEdit() {
+  const handleSaveEdit = useCallback(async () => {
     if (!editingMessageId || !editContent.trim()) return;
     await editMessage(editingMessageId, editContent.trim());
     setEditingMessageId(null);
     setEditContent("");
-  }
+  }, [editingMessageId, editContent, editMessage]);
 
-  async function handleDelete(msgId: string, mode: "for_me" | "for_everyone") {
+  const handleDelete = useCallback(async (msgId: string, mode: "for_me" | "for_everyone") => {
     setContextMenuMsgId(null);
     await deleteMessage(msgId, mode);
-  }
+  }, [deleteMessage]);
 
-  function handleLoadMore() {
+  const handleLoadMore = useCallback(() => {
     const container = messagesContainerRef.current;
     const viewport = container?.querySelector(
       '[data-slot="scroll-area-viewport"]'
@@ -385,12 +389,12 @@ function ChatPage() {
     }
 
     loadMoreMessages();
-  }
+  }, [loadMoreMessages]);
 
-  function handleReply(msgId: string, content: string) {
+  const handleReply = useCallback((msgId: string, content: string) => {
     setReplyTo({ id: msgId, content: content.slice(0, 80) });
     setContextMenuMsgId(null);
-  }
+  }, []);
 
   async function handleJoin(chatId: string) {
     if (joiningChatId) return;
@@ -419,28 +423,21 @@ function ChatPage() {
   }
 
 
-  const handleSelectChat = (chatId: string) => {
+  const handleSelectChat = useCallback((chatId: string) => {
     setActiveChat(chatId);
     setSidebarOpen(false);
-  };
+  }, [setActiveChat]);
 
-  const handleNewChat = () => {
+  const handleNewChat = useCallback(() => {
     setModalOpen(true);
     setSidebarOpen(false);
-  };
+  }, []);
 
-  async function handleDeleteChat(
-    chatId: string,
-    mode: "for_me" | "for_everyone"
-  ) {
-    try {
-      await deleteChat(chatId, mode);
-    } catch {
-      // keep page stable; delete hook throws for consumer handling
-    }
-  }
+  const handleDeleteChat = useCallback((chatId: string, mode: "for_me" | "for_everyone") => {
+    deleteChat(chatId, mode);
+  }, [deleteChat]);
 
-  function handleJumpToMessage(messageId: string) {
+  const handleJumpToMessage = useCallback((messageId: string) => {
     const target = document.querySelector(
       `[data-message-id="${messageId}"]`
     ) as HTMLElement | null;
@@ -453,27 +450,64 @@ function ChatPage() {
     window.setTimeout(() => {
       setHighlightedMessageId((prev) => (prev === messageId ? null : prev));
     }, 1500);
-  }
+  }, []);
+
+  const displayMessages = useMemo(
+    () =>
+      searchMode && searchQuery
+        ? messages.filter(
+            (m) =>
+              m.content.toLowerCase().includes(searchQuery.toLowerCase()) &&
+              !m.deletedAt
+          )
+        : messages,
+    [messages, searchMode, searchQuery]
+  );
 
   /* ── Render ── */
 
   return (
     <div
-      className="flex h-dvh bg-background text-foreground overflow-hidden"
-      style={{
-        ...(accentBg ? { backgroundColor: accentBg } : {}),
-        ...(accentFont ? { color: accentFont } : {}),
-      }}
+      className="flex h-dvh bg-background text-foreground overflow-hidden transition-[background-color,color] duration-300 ease-in-out"
     >
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-[24rem] shrink-0 border-r flex-col">
-        {settingsOpen ? (
+      <aside className="hidden md:flex w-[24rem] shrink-0 border-r flex-col backdrop-blur-sm">
+        <ChatSidebar
+          chats={chats}
+          activeChatId={activeChatId}
+          loading={loading.chats}
+          error={error.chats}
+          userEmail={user?.email}
+          joiningChatId={joiningChatId}
+          unreadCounts={unreadCounts}
+          onSelectChat={handleSelectChat}
+          onJoin={handleJoin}
+          onDecline={handleDecline}
+          onNewChat={handleNewChat}
+          onLogout={handleLogout}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onDeleteChat={handleDeleteChat}
+          mutedChats={mutedChats}
+          onToggleMute={toggleChatMute}
+        />
+      </aside>
+
+      {/* Settings overlay — renders over content so chat stays visible */}
+      <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <SheetContent side="left" className="w-[24rem] p-0 flex flex-col">
+          <SheetTitle className="sr-only">Settings</SheetTitle>
           <SettingsView
             onBack={() => setSettingsOpen(false)}
             onLogout={handleLogout}
             onDeleteAccount={handleDeleteAccount}
           />
-        ) : (
+        </SheetContent>
+      </Sheet>
+
+      {/* Mobile sidebar */}
+      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        <SheetContent side="left" className="w-[80vw] max-w-sm p-0 flex flex-col">
+          <SheetTitle className="sr-only">Navigation</SheetTitle>
           <ChatSidebar
             chats={chats}
             activeChatId={activeChatId}
@@ -492,44 +526,11 @@ function ChatPage() {
             mutedChats={mutedChats}
             onToggleMute={toggleChatMute}
           />
-        )}
-      </aside>
-
-      {/* Mobile sidebar */}
-      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-        <SheetContent side="left" className="w-[80vw] max-w-sm p-0 flex flex-col">
-          <SheetTitle className="sr-only">Navigation</SheetTitle>
-          {settingsOpen ? (
-            <SettingsView
-              onBack={() => setSettingsOpen(false)}
-              onLogout={handleLogout}
-              onDeleteAccount={handleDeleteAccount}
-            />
-          ) : (
-            <ChatSidebar
-              chats={chats}
-              activeChatId={activeChatId}
-              loading={loading.chats}
-              error={error.chats}
-              userEmail={user?.email}
-              joiningChatId={joiningChatId}
-              unreadCounts={unreadCounts}
-              onSelectChat={handleSelectChat}
-              onJoin={handleJoin}
-              onDecline={handleDecline}
-              onNewChat={handleNewChat}
-              onLogout={handleLogout}
-              onOpenSettings={() => setSettingsOpen(true)}
-              onDeleteChat={handleDeleteChat}
-              mutedChats={mutedChats}
-              onToggleMute={toggleChatMute}
-            />
-          )}
         </SheetContent>
       </Sheet>
 
       {/* Main panel */}
-      <main className="flex-1 flex flex-col min-w-0 bg-background">
+      <main className="flex-1 flex flex-col min-w-0 bg-background backdrop-blur-sm transition-[background-color,color] duration-300 ease-in-out">
         {activeChat ? (
           <>
             <ChatHeader
@@ -553,9 +554,20 @@ function ChatPage() {
               shareError={shareError}
               onStartSharing={startSharing}
               onStopSharing={stopSharing}
+              isAdmin={activeChat.role === "admin"}
               onBack={() => setActiveChat(null)}
               onToggleSearch={() => setSearchMode((m) => !m)}
               onToggleMembers={() => setMembersOpen(true)}
+              onRenameChat={(newName) => {
+                // Optimistic: update store immediately
+                useChatStore.getState().updateChat(activeChatId!, { name: newName, displayName: newName });
+                // Background persist
+                fetch(`/api/chat/${activeChatId}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ name: newName }),
+                }).catch(() => {});
+              }}
             />
 
             {connectionStatus !== "connected" && (
@@ -611,7 +623,7 @@ function ChatPage() {
                   className="flex-1 overflow-hidden relative"
                   ref={messagesContainerRef}
                 >
-                  <ScrollArea className="h-full px-4 md:px-6 py-4 md:py-6">
+                  <ScrollArea className="h-full px-4 md:px-6 pt-4 md:pt-6 pb-2">
                     <div className="flex flex-col gap-1">
                       {/* Load more older messages */}
                       {hasMoreMessages && !searchMode && (
@@ -640,13 +652,7 @@ function ChatPage() {
                         </p>
                       )}
 
-                      {(searchMode && searchQuery
-                        ? messages.filter((m) =>
-                            m.content.toLowerCase().includes(searchQuery.toLowerCase()) &&
-                            !m.deletedAt
-                          )
-                        : messages
-                      ).map((msg, i, list) => {
+                      {displayMessages.map((msg, i, list) => {
                         const isOwn =
                           msg.userId === user?.id ||
                           msg.userId === "optimistic";
@@ -848,10 +854,15 @@ function ChatPage() {
       {activeChatId && (
         <MembersPanel
           chatId={activeChatId}
+          chatType={activeChat?.type ?? "group"}
           open={membersOpen}
           onOpenChange={setMembersOpen}
           currentUserId={user?.id ?? ""}
           currentUserRole={activeChat?.role ?? "read"}
+          onLeaveGroup={() => {
+            setMembersOpen(false);
+            deleteChat(activeChatId, "for_me");
+          }}
         />
       )}
 

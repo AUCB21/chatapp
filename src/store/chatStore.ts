@@ -38,6 +38,7 @@ export interface ChatState {
   // Actions
   setBooted: (value: boolean) => void;
   setChats: (chats: ChatWithRole[]) => void;
+  updateChat: (chatId: string, updates: Partial<Pick<ChatWithRole, "name" | "displayName">>) => void;
   setActiveChat: (chatId: string | null) => void;
   setMessages: (chatId: string, messages: Message[]) => void;
   prependMessages: (chatId: string, messages: Message[]) => void;
@@ -46,6 +47,7 @@ export interface ChatState {
   removeMessage: (chatId: string, messageId: string) => void;
   setAttachments: (chatId: string, map: Record<string, AttachmentWithUrl[]>) => void;
   addAttachments: (chatId: string, messageId: string, items: AttachmentWithUrl[]) => void;
+  refreshAttachmentUrls: (chatId: string, urlMap: Record<string, string>) => void;
   setReactions: (chatId: string, reactions: Reaction[]) => void;
   addReaction: (chatId: string, reaction: Reaction) => void;
   removeReaction: (chatId: string, reactionId: string) => void;
@@ -99,6 +101,17 @@ export const useChatStore = create<ChatState>()(
           }),
           false,
           "setChats"
+        ),
+
+      updateChat: (chatId, updates) =>
+        set(
+          (state) => ({
+            chats: state.chats.map((c) =>
+              c.id === chatId ? { ...c, ...updates } : c
+            ),
+          }),
+          false,
+          "updateChat"
         ),
 
       setActiveChat: (chatId) =>
@@ -218,6 +231,25 @@ export const useChatStore = create<ChatState>()(
           }),
           false,
           "addAttachments"
+        ),
+
+      refreshAttachmentUrls: (chatId, urlMap) =>
+        set(
+          (state) => {
+            const chatAttachments = state.attachments[chatId];
+            if (!chatAttachments) return state;
+            const updated: Record<string, AttachmentWithUrl[]> = {};
+            for (const [msgId, atts] of Object.entries(chatAttachments)) {
+              updated[msgId] = atts.map((a) =>
+                urlMap[a.storagePath] ? { ...a, signedUrl: urlMap[a.storagePath] } : a
+              );
+            }
+            return {
+              attachments: { ...state.attachments, [chatId]: updated },
+            };
+          },
+          false,
+          "refreshAttachmentUrls"
         ),
 
       setReactions: (chatId, reactions) =>

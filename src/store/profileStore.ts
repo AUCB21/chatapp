@@ -44,3 +44,6 @@ export const selectUserStatus = (state: ProfileState): UserStatus =>
 
 export const selectIsDnd = (state: ProfileState): boolean =>
   state.profile?.status === "dnd";
+
+export const selectProfileStatus = (state: ProfileState) =>
+  state.profile?.status ?? null;
