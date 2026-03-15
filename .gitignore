@@ -1,8 +1,5 @@
 # dependencies
 node_modules
-package.json
-package-lock.json
-components.json
 
 # Next.js build output
 .next
@@ -13,6 +10,9 @@ out
 .env
 .env.local
 .env.*.local
+.env.development
+.env.production
+.env.staging
 
 # TypeScript incremental build info
 tsconfig.tsbuildinfo
@@ -23,7 +23,6 @@ coverage
 
 # misc
 .DS_Store
+Thumbs.db
 *.pem
 .claude
-*.rar
-# etc/
