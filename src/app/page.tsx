@@ -112,7 +112,7 @@ function ChatPage() {
     startSharing,
     stopSharing,
     rejectShare,
-  } = useScreenShare(activeChatId);
+  } = useScreenShare(incomingCallChatId ?? activeChatId);
   const {
     callStatus,
     isMuted,
@@ -1178,12 +1178,7 @@ function ChatPage() {
         error={callError}
         isIncomingCall={isIncomingCall}
         currentUserEmail={user?.email ?? null}
-        remoteParticipantName={
-          caller?.name ??
-          onlineUsers.find((u) => u.id !== user?.id)?.email?.split("@")[0] ??
-          activeChat?.name ??
-          null
-        }
+        remoteParticipantName={caller?.name ?? null}
         onAnswerCall={answerCall}
         onRejectCall={rejectCall}
         onHangUp={hangUp}

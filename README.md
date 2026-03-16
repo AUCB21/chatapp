@@ -1,59 +1,96 @@
 # EPS Chat App
 
-Welcome to **EPS Chat App** — a real-time messaging workspace designed to be used immediately.
+A real-time messaging app with voice calling, screen sharing, and rich presence — built on Next.js and Supabase.
 
-This repository is intended as a **plug-and-play experience** for exploring the product, not as a setup guide.
+## Features
 
-## Quick Tour
+- **Real-time messaging** — instant delivery with typing indicators and online presence
+- **Rich messages** — markdown support (links, inline code, code blocks), reactions, replies, edit & delete
+- **Voice calls** — per-chat audio calls with mute controls, speaking indicators, and a floating PIP when minimized
+- **Screen sharing** — share your screen during active calls
+- **Invitations** — invite by email or generate a shareable link
+- **Contacts** — manage contacts, block/mute users
+- **Starred & pinned messages** — bookmark important messages, pin them for the whole chat
+- **Full-text search** — search across messages with highlighted snippets and jump-to-message
+- **Role-based access** — read, write, and admin roles per chat
+- **Dark mode** — system-aware theme via `next-themes`
 
-### 1) Sign in
-- Open the app and authenticate.
-- Session sync is already integrated so chat/call features can start right away.
+## Tech Stack
 
-### 2) Land on Home
-- The left sidebar shows your conversations.
-- Select any chat to enter the conversation view.
-- Use the top-left back arrow to return to “select chat” mode.
+| Layer | Tech |
+|---|---|
+| Framework | Next.js 15 (Turbopack) |
+| Language | TypeScript 5.6 |
+| UI | React 18, TailwindCSS 4, shadcn/ui, Radix UI |
+| State | Zustand 5 |
+| Auth & Realtime | Supabase (SSR, Realtime, Storage) |
+| Database | PostgreSQL via Drizzle ORM |
+| Validation | Zod |
 
-### 3) Start a conversation
-- Click **New chat** from the sidebar.
-- Create a chat and either:
-  - invite one person directly by email, or
-  - generate a shareable invite link.
+## Getting Started
 
-### 4) Message naturally
-- Send normal text messages.
-- Use markdown-style content in messages:
-  - links: `[label](https://...)`
-  - raw URLs: `https://...`
-  - inline code: `` `code` ``
-  - code blocks: triple backticks
-- React, reply, edit, and delete from message interactions.
+### Prerequisites
 
-### 5) Presence and collaboration
-- See online status and typing activity in active chats.
-- Accept/decline pending invites directly in the chat flow.
+- Node.js 18+
+- A [Supabase](https://supabase.com) project with a PostgreSQL database
 
-### 6) Call and share
-- Start voice calls per chat.
-- Toggle mute while connected.
-- Start/receive screen sharing during calls.
+### Setup
 
-## What You’re Looking At
+```bash
+# 1. Clone and install
+git clone <repo-url>
+cd chat-app
+npm install
 
-- **Sidebar**: chats, quick actions, account strip.
-- **Header**: chat identity, presence, call/share controls.
-- **Message area**: timeline, reactions, context actions, typing signal.
-- **Composer**: multiline input (`Enter` sends, `Shift+Enter` adds a newline).
+# 2. Configure environment
+cp .env.example .env.local
+# Fill in your Supabase URL, anon key, and database URLs
 
-## Product Principles
+# 3. Run migrations
+npm run db:migrate
 
-- Fast real-time updates
-- Minimal friction invites
-- Clear roles and permissions
-- Lightweight, modern chat UI
+# 4. Start the dev server
+npm run dev
+```
 
-## Notes
+Open [http://localhost:3000](http://localhost:3000).
 
-- This project already includes auth, realtime sync, invite flow, and call/share UX.
-- Treat this README as a **feature tour**. No repository modification steps are required here.
+### Environment Variables
+
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | Pooled connection URL (port 6543) — used at runtime |
+| `DATABASE_URL_DIRECT` | Direct connection URL (port 5432) — used for migrations |
+| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key |
+| `SUPABASE_URL` | Same as above, server-only alias |
+| `SUPABASE_ANON_KEY` | Same as above, server-only alias |
+
+Find your Supabase keys at: **Dashboard → Project Settings → API**
+
+## Project Structure
+
+```
+src/
+├── app/               # Next.js pages and API routes
+│   ├── api/           # REST endpoints (auth, chats, messages, calls, invites, contacts)
+│   └── (auth)/        # Auth pages (login, register)
+├── components/        # React components (chat UI, call modal, voice controls, screen share)
+├── store/             # Zustand stores (chat, profile, session)
+├── hooks/             # Custom React hooks
+├── db/
+│   ├── schema.ts      # Drizzle table definitions
+│   ├── migrations/    # SQL migration files
+│   └── queries/       # Database query functions
+└── lib/               # Utilities and helpers
+```
+
+## Database
+
+Schema includes 15+ tables: `user_profiles`, `chats`, `memberships`, `messages`, `reactions`, `call_sessions`, `attachments`, `invitations`, and more — all with Row-Level Security (RLS) policies enforced via Supabase.
+
+```bash
+npm run db:generate   # Generate a new migration from schema changes
+npm run db:migrate    # Apply pending migrations
+npm run db:studio     # Open Drizzle Studio to browse the database
+```

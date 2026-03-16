@@ -190,6 +190,9 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
       }>;
 
       if (!activeCall) {
+        // If we just initiated a call, the row may not be committed yet — don't reset.
+        if (callStatusRef.current === "calling") return;
+
         // Session was deleted (host ended call from another client) — treat as call-end
         callIdRef.current = null;
         isHostRef.current = false;
@@ -228,7 +231,8 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
           }
         } else if (!meJoined) {
           setIsIncomingCall(true);
-          setCaller({ id: activeCall.createdByUserId, name: callerName ?? "Unknown" });
+          // Only set caller if not already set (signal handler sets the real name from fromName)
+          setCaller((prev) => prev ?? { id: activeCall.createdByUserId, name: callerName ?? "" });
           setCallStatus("ringing");
         }
       }
