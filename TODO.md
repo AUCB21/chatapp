@@ -56,6 +56,12 @@
 - **22. Call Button Font Consistency** — Updated to match project font.
 - **23. Global Incoming Call Modal** — Global `call_sessions` listener detects ringing calls in any member chat.
 - **44. Read Receipts UI** — `GET /api/chat/[chatId]/read-receipts` with display names. "Seen by X, Y" beneath last read own message.
+- **45. Block/Mute Users** — `blocked_users` table, `/api/block` GET/POST/DELETE, optimistic store state. Message filtering UI pending (#63).
+- **47. Full-Text Message Search** — `tsvector` generated column + GIN index on `messages`. `searchMessages` upgraded to `tsquery` with `:*` prefix matching, falls back to `ilike`.
+- **53. Contacts Master Data** — `contacts` table, `/api/contacts` CRUD, add-by-email support via admin API.
+- **54. Starred Messages** — `starred_messages` table, `/api/starred` GET/POST/DELETE, star button in message hover bar, StarredPanel Sheet. Panel access UI pending (#65).
+- **55. Pin Messages** — `pinned_messages` table, `/api/chat/[chatId]/pinned` GET/POST/DELETE, pin button in hover bar (admin only), pinned count banner in chat header.
+- **63 (emoji). Full emoji picker** — `EmojiPickerPopover` with 8 categories, search, 1000+ emojis. `+` button in quick reaction bar opens it.
 - **46. Keyboard Shortcuts** — `Ctrl/Cmd+K` toggles search, `Escape` exits search, `Alt+↑/↓` navigates chats.
 - **50. Performance: Memoization & Re-render Reduction** — `useMemo`, `useCallback`, `React.memo` on key components. `refreshChats` deduplication guard.
 - **51. Optimistic UI Across All Actions** — All selectors/buttons update visually immediately. API calls fire in background.
@@ -74,25 +80,15 @@
 
 ## 🟡 Pending — Requires DB migration
 
-1. **45. Block/Mute Users**
-   User-level blocking with message filtering. Requires `blocked_users` table, API, and client-side filtering.
-
-2. **47. Full-Text Message Search**
-   Backend `tsvector`/`tsquery` full-text search index + search results UI with message jumping. Benefits from #46.
-
-3. **53. Contacts Master Data**
-   `contacts` table (user → contact with nickname/notes) + Contacts page in settings. Contact picker for invite flows instead of manual email entry.
-
-4. **54. Starred Messages**
-   Per-user message bookmarking. `starred_messages` table (`user_id, message_id`), API endpoints, "Starred" panel in chat header or sidebar.
-
-5. **55. Pin Messages**
-   Admin-only group-wide message pinning. `pinned_messages` table (or `pinned_at`/`pinned_by` on messages), API endpoints, pinned messages banner/panel. Distinct from starred (personal vs group-wide).
-
-6. **56. Polls**
+1. **56. Polls**
    In-chat polls/voting. `polls`, `poll_options`, `poll_votes` tables. Creation UI, inline poll card, real-time vote updates. Single/multi-choice, optional expiry.
 
 ---
+
+- **63. Block/Mute UI integration** — `blockedUserIds` filters messages in display list. Block/Unblock in MembersPanel dropdown for every non-self member. `onToggleBlock` wired from page.tsx.
+- **64. Contacts Page in Settings** — `ContactsPage` in SettingsView. Add by email, nickname/notes edit, remove. Uses `/api/contacts` CRUD.
+- **65. Starred Messages panel access** — Star icon button added to ChatHeader toolbar, opens StarredPanel Sheet.
+- **66. Full-Text Search UI upgrade** — Search bar fires debounced FTS API call (`?search=`), shows results panel with highlighted match terms, click jumps to message.
 
 ## 🔵 Pending — No migration needed
 

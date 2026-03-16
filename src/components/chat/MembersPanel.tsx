@@ -36,6 +36,8 @@ interface MembersPanelProps {
   onOpenChange: (open: boolean) => void;
   currentUserId: string;
   currentUserRole: string;
+  blockedUserIds?: Set<string>;
+  onToggleBlock?: (userId: string) => void;
   onLeaveGroup?: () => void;
 }
 
@@ -75,6 +77,8 @@ export default function MembersPanel({
   onOpenChange,
   currentUserId,
   currentUserRole,
+  blockedUserIds,
+  onToggleBlock,
   onLeaveGroup,
 }: MembersPanelProps) {
   const [members, setMembers] = useState<Member[]>([]);
@@ -431,6 +435,9 @@ export default function MembersPanel({
                 const isSelf = member.userId === currentUserId;
                 const badge = ROLE_BADGE[member.role];
                 const canManage = isAdmin && !isSelf;
+                const isBlocked = blockedUserIds?.has(member.userId) ?? false;
+                const canBlock = !isSelf && !!onToggleBlock;
+                const showDropdown = canManage || canBlock;
                 const isEditing = editingId === member.userId;
                 const canEditNickname = isAdmin || isSelf;
 
@@ -503,7 +510,7 @@ export default function MembersPanel({
                         {badge.label}
                       </Badge>
 
-                      {canManage && (
+                      {showDropdown && (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button
@@ -518,34 +525,45 @@ export default function MembersPanel({
                             </button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-44">
-                            {member.role !== "admin" && (
+                            {canManage && member.role !== "admin" && (
                               <DropdownMenuItem
                                 onClick={() => handleChangeRole(member.userId, "admin")}
                               >
                                 Make admin
                               </DropdownMenuItem>
                             )}
-                            {member.role !== "write" && (
+                            {canManage && member.role !== "write" && (
                               <DropdownMenuItem
                                 onClick={() => handleChangeRole(member.userId, "write")}
                               >
                                 Set as member
                               </DropdownMenuItem>
                             )}
-                            {member.role !== "read" && (
+                            {canManage && member.role !== "read" && (
                               <DropdownMenuItem
                                 onClick={() => handleChangeRole(member.userId, "read")}
                               >
                                 Set read-only
                               </DropdownMenuItem>
                             )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => handleRemove(member.userId)}
-                              className="text-destructive focus:text-destructive"
-                            >
-                              Remove from chat
-                            </DropdownMenuItem>
+                            {canManage && <DropdownMenuSeparator />}
+                            {canManage && (
+                              <DropdownMenuItem
+                                onClick={() => handleRemove(member.userId)}
+                                className="text-destructive focus:text-destructive"
+                              >
+                                Remove from chat
+                              </DropdownMenuItem>
+                            )}
+                            {canBlock && canManage && <DropdownMenuSeparator />}
+                            {canBlock && (
+                              <DropdownMenuItem
+                                onClick={() => onToggleBlock!(member.userId)}
+                                className={isBlocked ? "text-amber-500 focus:text-amber-500" : "text-destructive focus:text-destructive"}
+                              >
+                                {isBlocked ? "Unblock user" : "Block user"}
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       )}

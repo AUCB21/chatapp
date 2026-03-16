@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { useTheme } from "next-themes";
-import { ArrowLeft, ChevronRight, Moon, Sun, Monitor, Palette, User, Shield, Trash2, KeyRound, Check, RotateCcw } from "lucide-react";
+import { ArrowLeft, BookUser, ChevronRight, Moon, Sun, Monitor, Palette, User, Shield, Trash2, KeyRound, Check, RotateCcw, Pencil, Plus, X } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useProfileStore } from "@/store/profileStore";
@@ -16,7 +16,7 @@ interface SettingsViewProps {
   onDeleteAccount: () => void;
 }
 
-type SettingsPage = "main" | "profile" | "appearance" | "status";
+type SettingsPage = "main" | "profile" | "appearance" | "status" | "contacts";
 
 const STATUS_OPTIONS: { value: UserStatus; label: string; color: string; description: string }[] = [
   { value: "online", label: "Online", color: "bg-emerald-500", description: "You appear active to others" },
@@ -230,6 +230,10 @@ export default function SettingsView({ onBack, onLogout, onDeleteAccount }: Sett
     );
   }
 
+  if (page === "contacts") {
+    return <ContactsPage onBack={() => setPage("main")} />;
+  }
+
   // Main settings page
   return (
     <div className="flex h-full flex-col bg-sidebar">
@@ -266,6 +270,12 @@ export default function SettingsView({ onBack, onLogout, onDeleteAccount }: Sett
             label="Profile"
             sublabel="Username, display name"
             onClick={() => setPage("profile")}
+          />
+          <MenuItem
+            icon={BookUser}
+            label="Contacts"
+            sublabel="Manage your contacts"
+            onClick={() => setPage("contacts")}
           />
           <MenuItem
             icon={Palette}
@@ -636,6 +646,207 @@ function StatusDot({ status }: { status: UserStatus }) {
     status === "idle" ? "bg-amber-500" :
     "bg-rose-500";
   return <div className={`w-2 h-2 rounded-full ${color}`} />;
+}
+
+interface Contact {
+  id: string;
+  contactUserId: string;
+  nickname: string | null;
+  notes: string | null;
+  email: string;
+  displayName: string | null;
+}
+
+function ContactsPage({ onBack }: { onBack: () => void }) {
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [addEmail, setAddEmail] = useState("");
+  const [addStatus, setAddStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [addError, setAddError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editNickname, setEditNickname] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+
+  useEffect(() => {
+    fetch("/api/contacts")
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => { if (j?.data) setContacts(j.data); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault();
+    const email = addEmail.trim();
+    if (!email) return;
+    setAddStatus("loading");
+    setAddError(null);
+    try {
+      const res = await fetch("/api/contacts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) { setAddError(json.error ?? "Failed"); setAddStatus("error"); return; }
+      setContacts((prev) => [json.data, ...prev]);
+      setAddEmail("");
+      setAddStatus("idle");
+    } catch {
+      setAddError("Network error");
+      setAddStatus("error");
+    }
+  }
+
+  function startEdit(contact: Contact) {
+    setEditingId(contact.id);
+    setEditNickname(contact.nickname ?? "");
+    setEditNotes(contact.notes ?? "");
+  }
+
+  async function handleSaveEdit(contactId: string) {
+    const nickname = editNickname.trim() || null;
+    const notes = editNotes.trim() || null;
+    setContacts((prev) => prev.map((c) => c.id === contactId ? { ...c, nickname, notes } : c));
+    setEditingId(null);
+    fetch("/api/contacts", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contactId, nickname, notes }),
+    }).catch(() => {});
+  }
+
+  function handleRemove(contactId: string) {
+    setContacts((prev) => prev.filter((c) => c.id !== contactId));
+    fetch("/api/contacts", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contactId }),
+    }).catch(() => {});
+  }
+
+  return (
+    <div className="flex h-full flex-col bg-sidebar">
+      <PageHeader title="Contacts" onBack={onBack} />
+
+      {/* Add contact */}
+      <div className="px-4 py-3 border-b border-sidebar-border">
+        <form onSubmit={handleAdd} className="flex gap-2">
+          <input
+            type="email"
+            value={addEmail}
+            onChange={(e) => setAddEmail(e.target.value)}
+            placeholder="Add by email…"
+            disabled={addStatus === "loading"}
+            className="flex-1 text-sm bg-sidebar-accent/60 border border-sidebar-border/50 rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-ring/40 disabled:opacity-50"
+          />
+          <button
+            type="submit"
+            disabled={addStatus === "loading" || !addEmail.trim()}
+            className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 transition-opacity"
+          >
+            {addStatus === "loading" ? (
+              <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+              </svg>
+            ) : (
+              <Plus className="w-3.5 h-3.5" />
+            )}
+          </button>
+        </form>
+        {addError && <p className="text-[0.65rem] text-destructive mt-1">{addError}</p>}
+      </div>
+
+      <ScrollArea className="flex-1">
+        {loading ? (
+          <div className="flex items-center justify-center py-10">
+            <svg className="w-5 h-5 animate-spin text-muted-foreground" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+          </div>
+        ) : contacts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-2 text-muted-foreground">
+            <BookUser className="w-8 h-8 opacity-30" />
+            <p className="text-sm">No contacts yet</p>
+          </div>
+        ) : (
+          <ul className="py-1 divide-y divide-sidebar-border/30">
+            {contacts.map((contact) => {
+              const name = contact.nickname ?? contact.displayName ?? contact.email.split("@")[0];
+              const isEditing = editingId === contact.id;
+              return (
+                <li key={contact.id} className="px-4 py-3 group">
+                  {isEditing ? (
+                    <div className="flex flex-col gap-2">
+                      <input
+                        autoFocus
+                        value={editNickname}
+                        onChange={(e) => setEditNickname(e.target.value)}
+                        placeholder="Nickname (optional)"
+                        className="text-sm bg-sidebar-accent/60 border border-sidebar-border/50 rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-ring/40 w-full"
+                      />
+                      <textarea
+                        value={editNotes}
+                        onChange={(e) => setEditNotes(e.target.value)}
+                        placeholder="Notes (optional)"
+                        rows={2}
+                        className="text-sm bg-sidebar-accent/60 border border-sidebar-border/50 rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-ring/40 w-full resize-none"
+                      />
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={() => setEditingId(null)}
+                          className="text-xs px-3 py-1 rounded-md border border-sidebar-border text-muted-foreground hover:bg-muted transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => handleSaveEdit(contact.id)}
+                          className="text-xs px-3 py-1 rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-full bg-primary/15 text-primary flex items-center justify-center text-xs font-semibold shrink-0 mt-0.5">
+                        {name[0].toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{name}</p>
+                        <p className="text-[0.65rem] text-muted-foreground truncate">{contact.email}</p>
+                        {contact.notes && (
+                          <p className="text-[0.65rem] text-muted-foreground/70 mt-0.5 line-clamp-2">{contact.notes}</p>
+                        )}
+                      </div>
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        <button
+                          onClick={() => startEdit(contact)}
+                          className="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
+                          title="Edit"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => handleRemove(contact.id)}
+                          className="w-6 h-6 flex items-center justify-center rounded-md text-destructive/60 hover:bg-destructive/10 hover:text-destructive transition-colors"
+                          title="Remove"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </ScrollArea>
+    </div>
+  );
 }
 
 function ColorPicker({
