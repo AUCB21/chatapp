@@ -99,5 +99,14 @@
 9. **59. Login / Register UI Refresh**
    Make login and register forms more visually polished and eye-catching. Improve layout, add brand identity (logo/name), better input styling, animated transitions, and visual hierarchy. Keep all existing auth logic intact.
 
-10. **57. Group Settings Modal**
+10. **60. View Password Toggle**
+   Eye icon button inside password inputs (login, register, confirm password) to toggle between `type="password"` and `type="text"`. No logic changes.
+
+11. **61. Forgot Password Link Position**
+   Move "Forgot password?" link from inline with the label to below the password input, left or right aligned. Login form only.
+
+13. **62. ESC to Exit Chat**
+   Inside an open chat, pressing Escape triggers the existing "back to menu" action (clears `activeChatId`). Should only fire when no modal/sheet/overlay is open. Pure frontend — `keydown` listener in the chat view.
+
+14. **57. Group Settings Modal**
    Clicking chat title opens a unified Group Settings modal: edit group name & avatar, members list with role management (admin/write/read), permission settings (who can send messages, add members, pin), custom role creation. Replaces inline rename + separate MembersPanel.

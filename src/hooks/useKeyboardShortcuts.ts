@@ -4,14 +4,18 @@ interface UseKeyboardShortcutsOptions {
   onToggleSearch: () => void;
   onEscapeSearch: () => void;
   onNavigateChat: (direction: "up" | "down") => void;
+  onExitChat: () => void;
   isSearchMode: boolean;
+  hasActiveChat: boolean;
 }
 
 export function useKeyboardShortcuts({
   onToggleSearch,
   onEscapeSearch,
   onNavigateChat,
+  onExitChat,
   isSearchMode,
+  hasActiveChat,
 }: UseKeyboardShortcutsOptions) {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -22,10 +26,21 @@ export function useKeyboardShortcuts({
         return;
       }
 
-      // Escape: Close search mode (only when search is active)
-      if (e.key === "Escape" && isSearchMode) {
-        onEscapeSearch();
-        return;
+      if (e.key === "Escape") {
+        // Don't fire if user is typing in an input/textarea
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+        // Priority 1: close search
+        if (isSearchMode) {
+          onEscapeSearch();
+          return;
+        }
+        // Priority 2: exit chat
+        if (hasActiveChat) {
+          onExitChat();
+          return;
+        }
       }
 
       // Alt+ArrowUp / Alt+ArrowDown: Navigate chats
@@ -43,5 +58,5 @@ export function useKeyboardShortcuts({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onToggleSearch, onEscapeSearch, onNavigateChat, isSearchMode]);
+  }, [onToggleSearch, onEscapeSearch, onNavigateChat, onExitChat, isSearchMode, hasActiveChat]);
 }

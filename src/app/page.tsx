@@ -224,7 +224,9 @@ function ChatPage() {
         : Math.min(chats.length - 1, currentIndex + 1);
       if (chats[nextIndex]) setActiveChat(chats[nextIndex].id);
     },
+    onExitChat: () => setActiveChat(null),
     isSearchMode: searchMode,
+    hasActiveChat: !!activeChatId,
   });
 
   /* ── Effects ── */
