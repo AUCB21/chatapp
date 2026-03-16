@@ -285,6 +285,80 @@ export const invitations = pgTable(
   })
 );
 
+/**
+ * blocked_users: user-level blocking.
+ */
+export const blockedUsers = pgTable(
+  "blocked_users",
+  {
+    blockerId: uuid("blocker_id").notNull(),
+    blockedId: uuid("blocked_id").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.blockerId, t.blockedId] }),
+    blockerIdx: index("blocked_users_blocker_idx").on(t.blockerId),
+  })
+);
+
+/**
+ * contacts: user-owned contact list with optional nickname/notes.
+ */
+export const contacts = pgTable(
+  "contacts",
+  {
+    ownerId: uuid("owner_id").notNull(),
+    contactId: uuid("contact_id").notNull(),
+    nickname: text("nickname"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.ownerId, t.contactId] }),
+    ownerIdx: index("contacts_owner_idx").on(t.ownerId),
+  })
+);
+
+/**
+ * starred_messages: per-user message bookmarks.
+ */
+export const starredMessages = pgTable(
+  "starred_messages",
+  {
+    userId: uuid("user_id").notNull(),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.messageId] }),
+    userIdx: index("starred_messages_user_idx").on(t.userId),
+  })
+);
+
+/**
+ * pinned_messages: admin-pinned messages per chat.
+ */
+export const pinnedMessages = pgTable(
+  "pinned_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    chatId: uuid("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    pinnedBy: uuid("pinned_by").notNull(),
+    pinnedAt: timestamp("pinned_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    chatIdx: index("pinned_messages_chat_idx").on(t.chatId),
+  })
+);
+
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type UserStatus = (typeof userStatusEnum.enumValues)[number];
 export type ChatType = (typeof chatTypeEnum.enumValues)[number];
@@ -302,6 +376,10 @@ export type CallParticipant = typeof callParticipants.$inferSelect;
 export type MemberRole = (typeof memberRoleEnum.enumValues)[number];
 export type InvitationStatus = (typeof invitationStatusEnum.enumValues)[number];
 export type MessageStatus = (typeof messageStatusEnum.enumValues)[number];
+export type BlockedUser = typeof blockedUsers.$inferSelect;
+export type Contact = typeof contacts.$inferSelect;
+export type StarredMessage = typeof starredMessages.$inferSelect;
+export type PinnedMessage = typeof pinnedMessages.$inferSelect;
 export type CallStatus = (typeof callStatusEnum.enumValues)[number];
 export type CallParticipantRole =
   (typeof callParticipantRoleEnum.enumValues)[number];

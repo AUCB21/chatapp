@@ -1,11 +1,12 @@
 "use client";
 
-import { Fragment, memo, useMemo, useState, useEffect, type ReactNode } from "react";
+import { Fragment, memo, useMemo, useState, useEffect, useCallback, type ReactNode } from "react";
 import { Pencil, Trash2, FileText, Download, Film, Music, MessageSquare, Code2, ChevronDown, ChevronUp } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { Message } from "@/db/schema";
 import type { ReactionGroup, AttachmentWithUrl, ReadReceiptEntry } from "@/store/chatStore";
+import EmojiPickerPopover from "./EmojiPickerPopover";
 
 import hljs from "highlight.js/lib/core";
 import javascript from "highlight.js/lib/languages/javascript";
@@ -624,6 +625,11 @@ interface MessageBubbleProps {
   onMediaClick?: (src: string, mimeType: string, fileName: string) => void;
   replyCount?: number;
   onViewThread?: () => void;
+  isStarred?: boolean;
+  onToggleStar?: () => void;
+  isAdmin?: boolean;
+  onTogglePin?: () => void;
+  isPinned?: boolean;
 }
 
 function MessageBubble({
@@ -656,8 +662,24 @@ function MessageBubble({
   onMediaClick,
   replyCount,
   onViewThread,
+  isStarred,
+  onToggleStar,
+  isAdmin,
+  onTogglePin,
+  isPinned,
 }: MessageBubbleProps) {
   const [deletePickerOpen, setDeletePickerOpen] = useState(false);
+  const [fullPickerOpen, setFullPickerOpen] = useState(false);
+
+  // Close full picker when quick picker closes
+  useEffect(() => {
+    if (!isPickerOpen) setFullPickerOpen(false);
+  }, [isPickerOpen]);
+
+  const handleFullPickerSelect = useCallback((emoji: string) => {
+    onToggleReaction(emoji);
+    onSetPickerOpen(false);
+  }, [onToggleReaction, onSetPickerOpen]);
   const isFailed = msg.id.startsWith("failed-");
   const isEditing = editContent !== null;
   const isDeleted = !!msg.deletedAt;
@@ -821,6 +843,32 @@ function MessageBubble({
                   </button>
                 )}
 
+                {/* Star */}
+                {onToggleStar && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onToggleStar(); onSetPickerOpen(false); }}
+                    className={`w-7 h-7 rounded-lg transition-colors flex items-center justify-center ${isStarred ? "text-amber-400 hover:bg-amber-400/10" : "text-muted-foreground hover:bg-muted"}`}
+                    title={isStarred ? "Unstar" : "Star"}
+                  >
+                    <svg className="w-3.5 h-3.5" fill={isStarred ? "currentColor" : "none"} stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 0 1 1.04 0l2.125 5.111a.563.563 0 0 0 .475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 0 0-.182.557l1.285 5.385a.562.562 0 0 1-.84.61l-4.725-2.885a.562.562 0 0 0-.586 0L6.982 20.54a.562.562 0 0 1-.84-.61l1.285-5.386a.562.562 0 0 0-.182-.557l-4.204-3.602a.562.562 0 0 1 .321-.988l5.518-.442a.563.563 0 0 0 .475-.345L11.48 3.5Z" />
+                    </svg>
+                  </button>
+                )}
+
+                {/* Pin — admin only */}
+                {isAdmin && onTogglePin && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onTogglePin(); onSetPickerOpen(false); }}
+                    className={`w-7 h-7 rounded-lg transition-colors flex items-center justify-center ${isPinned ? "text-primary hover:bg-primary/10" : "text-muted-foreground hover:bg-muted"}`}
+                    title={isPinned ? "Unpin" : "Pin"}
+                  >
+                    <svg className="w-3.5 h-3.5" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m 12 3 l 1.5 5 h 5 l -4 3 1.5 5 L 12 13 7 16 8.5 11 4.5 8 h 5 Z" />
+                    </svg>
+                  </button>
+                )}
+
                 <div className="w-px h-4 bg-border mx-0.5" />
 
                 {/* Edit — own messages only */}
@@ -889,7 +937,26 @@ function MessageBubble({
                     {emoji}
                   </button>
                 ))}
+                {/* Full picker toggle */}
+                <button
+                  onClick={() => setFullPickerOpen((v) => !v)}
+                  className="w-8 h-8 rounded-xl hover:bg-muted transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground"
+                  title="More emojis"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                </button>
               </div>
+            )}
+
+            {/* Full emoji picker */}
+            {fullPickerOpen && isPickerOpen && !isDeleted && !isAnyEditing && (
+              <EmojiPickerPopover
+                isOwn={isOwn}
+                onSelect={handleFullPickerSelect}
+                onClose={() => { setFullPickerOpen(false); onSetPickerOpen(false); }}
+              />
             )}
           </div>
         )}

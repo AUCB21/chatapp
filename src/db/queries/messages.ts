@@ -303,6 +303,11 @@ export async function searchMessages(userId: string, chatId: string, query: stri
 
   if (!membership[0]) return [];
 
+  // Use full-text search (tsvector) when query is a plain word/phrase; fall back to ilike
+  const trimmed = query.trim();
+  const useFts = trimmed.length >= 2 && !/[%_]/.test(trimmed);
+  const tsQuery = trimmed.split(/\s+/).filter(Boolean).map((w) => w + ":*").join(" & ");
+
   return db
     .select()
     .from(messages)
@@ -311,7 +316,9 @@ export async function searchMessages(userId: string, chatId: string, query: stri
         eq(messages.chatId, chatId),
         isNull(messages.deletedAt),
         notHiddenForUser(userId),
-        sql`${messages.content} ilike ${"%" + query + "%"}`
+        useFts
+          ? sql`fts @@ to_tsquery('english', ${tsQuery})`
+          : sql`${messages.content} ilike ${"%" + trimmed + "%"}`
       )
     )
     .orderBy(desc(messages.createdAt))

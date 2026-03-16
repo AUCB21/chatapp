@@ -120,6 +120,27 @@
       "when": 1774137600000,
       "tag": "0014_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1774224000000,
+      "tag": "0015_fix_memberships_realtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1774310400000,
+      "tag": "0016_fix_invitations_realtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1774396800000,
+      "tag": "0017_block_mute_starred_pinned_contacts_fts",
+      "breakpoints": true
     }
   ]
 }

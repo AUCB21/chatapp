@@ -31,6 +31,12 @@
 - **39. Members Panel Pagination** — Cursor-based pagination (20/page) with "Load more" button. Backward-compatible.
 - **42. Add Members After Creation** — Admin-only invite-by-email in MembersPanel. Direct add or signup email sent.
 - **48. Thread View** — `ThreadPanel` Sheet shows reply chain. Thread indicator ("N replies") below messages. "View thread" in hover action bar.
+- **57. Group Settings Modal** — Clicking group name in ChatHeader opens Dialog with General tab (rename) and Members tab (opens members panel). Settings gear icon on hover.
+- **58. Bulk Member Import (CSV/TXT)** — "Import file" tab in MembersPanel invite area. Parses `.csv`/`.txt`, deduplicates, previews with per-email status, batch-sends via existing invite API.
+- **59. Login / Register UI Refresh** — Split-screen layout, SVG inline logo, gradient orb background, feature pills. Eye toggle on password fields. Forgot password moved below input.
+- **60. View Password Toggle** — Eye icon in password/confirm fields on login and register. `onMouseDown` prevents focus steal so Enter still submits.
+- **61. Forgot Password Link Position** — Moved below password input (right-aligned).
+- **62. ESC to Exit Chat** — `useKeyboardShortcuts` fires `setActiveChat(null)` on Escape when a chat is open and focus is not in an input/textarea.
 
 ### Media & Files
 - **16. File / Image Sharing** — Full file/image sharing via Supabase Storage. FormData upload (max 10 files, 10 MB), MIME allowlist, signed URLs (5-min TTL), drag-and-drop.
@@ -90,23 +96,5 @@
 
 ## 🔵 Pending — No migration needed
 
-7. **58. Bulk Member Import (CSV / TXT)**
-   Upload a `.csv` or `.txt` file containing one email per line (or comma-separated) to invite multiple members at once to a group chat. UI: "Import from file" button in MembersPanel invite area, file picker accepting `.csv`/`.txt`, parse client-side, deduplicate, preview list with validation errors per email, then batch-send invites. Reuses existing `POST /api/chat/[chatId]/invite` per email (fire sequentially or in parallel with a concurrency limit). No new schema needed — same invite flow as single-add.
-
-8. **49. Call Flow Completion**
+1. **49. Call Flow Completion**
    Finish WebRTC signaling, ringtone, multi-screen call UI. Full-screen call modal with avatar, controls bar (mic/video/screenshare/hangup), connection status badge. Screen sharing may need fixing.
-
-9. **59. Login / Register UI Refresh**
-   Make login and register forms more visually polished and eye-catching. Improve layout, add brand identity (logo/name), better input styling, animated transitions, and visual hierarchy. Keep all existing auth logic intact.
-
-10. **60. View Password Toggle**
-   Eye icon button inside password inputs (login, register, confirm password) to toggle between `type="password"` and `type="text"`. No logic changes.
-
-11. **61. Forgot Password Link Position**
-   Move "Forgot password?" link from inline with the label to below the password input, left or right aligned. Login form only.
-
-13. **62. ESC to Exit Chat**
-   Inside an open chat, pressing Escape triggers the existing "back to menu" action (clears `activeChatId`). Should only fire when no modal/sheet/overlay is open. Pure frontend — `keydown` listener in the chat view.
-
-14. **57. Group Settings Modal**
-   Clicking chat title opens a unified Group Settings modal: edit group name & avatar, members list with role management (admin/write/read), permission settings (who can send messages, add members, pin), custom role creation. Replaces inline rename + separate MembersPanel.

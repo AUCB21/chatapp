@@ -16,7 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Check, LogOut, Pencil, UserPlus, X } from "lucide-react";
+import { Check, LogOut, Pencil, Upload, UserPlus, X } from "lucide-react";
 import type { MemberRole } from "@/db/schema";
 
 interface Member {
@@ -140,9 +140,63 @@ export default function MembersPanel({
   const editRef = useRef<HTMLInputElement>(null);
 
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteTab, setInviteTab] = useState<"single" | "bulk">("single");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteStatus, setInviteStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [inviteError, setInviteError] = useState<string | null>(null);
+
+  // Bulk import state
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  interface BulkEmail { email: string; status: "pending" | "sending" | "done" | "error"; error?: string }
+  const [bulkEmails, setBulkEmails] = useState<BulkEmail[]>([]);
+  const [bulkRunning, setBulkRunning] = useState(false);
+
+  function parseBulkFile(text: string): string[] {
+    return [...new Set(
+      text.split(/[\n,;]+/)
+        .map((s) => s.trim().toLowerCase())
+        .filter((s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s))
+    )];
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const emails = parseBulkFile(ev.target?.result as string);
+      setBulkEmails(emails.map((email) => ({ email, status: "pending" })));
+    };
+    reader.readAsText(file);
+    // reset input so same file can be re-selected
+    e.target.value = "";
+  }
+
+  async function handleBulkSend() {
+    if (bulkRunning || bulkEmails.length === 0) return;
+    setBulkRunning(true);
+    const pending = bulkEmails.filter((e) => e.status === "pending");
+    for (const item of pending) {
+      setBulkEmails((prev) => prev.map((e) => e.email === item.email ? { ...e, status: "sending" } : e));
+      try {
+        const res = await fetch(`/api/chat/${chatId}/invite`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: item.email, role: "write" }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (res.ok) {
+          setBulkEmails((prev) => prev.map((e) => e.email === item.email ? { ...e, status: "done" } : e));
+        } else {
+          setBulkEmails((prev) => prev.map((e) => e.email === item.email ? { ...e, status: "error", error: json.error ?? "Failed" } : e));
+        }
+      } catch {
+        setBulkEmails((prev) => prev.map((e) => e.email === item.email ? { ...e, status: "error", error: "Network error" } : e));
+      }
+    }
+    setBulkRunning(false);
+    fetchMembers();
+  }
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -240,47 +294,124 @@ export default function MembersPanel({
           </div>
 
           {isAdmin && inviteOpen && (
-            <form onSubmit={handleInvite} className="mt-2 flex flex-col gap-1.5">
-              <div className="flex gap-1.5">
-                <input
-                  type="email"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="user@example.com"
-                  disabled={inviteStatus === "loading" || inviteStatus === "success"}
-                  className="flex-1 text-sm bg-muted/60 border border-border rounded-md px-2.5 py-1 outline-none focus:ring-1 focus:ring-ring/40 disabled:opacity-50"
-                />
+            <div className="mt-2 flex flex-col gap-1.5">
+              {/* Tabs */}
+              <div className="flex gap-1 text-[0.65rem] font-medium">
                 <button
-                  type="submit"
-                  disabled={inviteStatus === "loading" || inviteStatus === "success" || !inviteEmail.trim()}
-                  className="w-8 h-8 flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 transition-opacity"
+                  onClick={() => setInviteTab("single")}
+                  className={`px-2 py-0.5 rounded transition-colors ${inviteTab === "single" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground"}`}
                 >
-                  {inviteStatus === "loading" ? (
-                    <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                    </svg>
-                  ) : inviteStatus === "success" ? (
-                    <Check className="w-3.5 h-3.5" />
-                  ) : (
-                    <UserPlus className="w-3.5 h-3.5" />
-                  )}
+                  Single
+                </button>
+                <button
+                  onClick={() => setInviteTab("bulk")}
+                  className={`px-2 py-0.5 rounded transition-colors ${inviteTab === "bulk" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  Import file
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setInviteOpen(false); setInviteEmail(""); setInviteStatus("idle"); setInviteError(null); }}
-                  className="w-8 h-8 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
+                  onClick={() => { setInviteOpen(false); setInviteEmail(""); setInviteStatus("idle"); setInviteError(null); setBulkEmails([]); }}
+                  className="ml-auto w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-3 h-3" />
                 </button>
               </div>
-              {inviteStatus === "success" && (
-                <p className="text-[0.65rem] text-emerald-500">Invited successfully!</p>
+
+              {inviteTab === "single" ? (
+                <form onSubmit={handleInvite} className="flex flex-col gap-1.5">
+                  <div className="flex gap-1.5">
+                    <input
+                      type="email"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      placeholder="user@example.com"
+                      disabled={inviteStatus === "loading" || inviteStatus === "success"}
+                      className="flex-1 text-sm bg-muted/60 border border-border rounded-md px-2.5 py-1 outline-none focus:ring-1 focus:ring-ring/40 disabled:opacity-50"
+                    />
+                    <button
+                      type="submit"
+                      disabled={inviteStatus === "loading" || inviteStatus === "success" || !inviteEmail.trim()}
+                      className="w-8 h-8 flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 transition-opacity"
+                    >
+                      {inviteStatus === "loading" ? (
+                        <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                        </svg>
+                      ) : inviteStatus === "success" ? (
+                        <Check className="w-3.5 h-3.5" />
+                      ) : (
+                        <UserPlus className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+                  {inviteStatus === "success" && (
+                    <p className="text-[0.65rem] text-emerald-500">Invited successfully!</p>
+                  )}
+                  {inviteStatus === "error" && inviteError && (
+                    <p className="text-[0.65rem] text-destructive">{inviteError}</p>
+                  )}
+                </form>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {/* File picker */}
+                  <div className="flex gap-1.5">
+                    <input ref={fileInputRef} type="file" accept=".csv,.txt" onChange={handleFileChange} className="hidden" />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-md border border-dashed border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      {bulkEmails.length > 0 ? `${bulkEmails.length} emails loaded — replace` : "Choose .csv or .txt"}
+                    </button>
+                    {bulkEmails.length > 0 && !bulkRunning && (
+                      <button
+                        onClick={handleBulkSend}
+                        disabled={bulkEmails.every((e) => e.status !== "pending")}
+                        className="w-8 h-8 flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 transition-opacity"
+                        title="Send invites"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {bulkRunning && (
+                      <div className="w-8 h-8 flex items-center justify-center">
+                        <svg className="w-3.5 h-3.5 animate-spin text-primary" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                  {/* Preview list */}
+                  {bulkEmails.length > 0 && (
+                    <ul className="max-h-36 overflow-y-auto space-y-0.5 text-[0.65rem]">
+                      {bulkEmails.map((item) => (
+                        <li key={item.email} className="flex items-center gap-1.5 px-1">
+                          {item.status === "done" && <Check className="w-3 h-3 text-emerald-500 shrink-0" />}
+                          {item.status === "error" && <X className="w-3 h-3 text-destructive shrink-0" />}
+                          {item.status === "sending" && (
+                            <svg className="w-3 h-3 animate-spin text-primary shrink-0" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                            </svg>
+                          )}
+                          {item.status === "pending" && <div className="w-3 h-3 rounded-full border border-border shrink-0" />}
+                          <span className={`truncate ${item.status === "error" ? "text-destructive" : item.status === "done" ? "text-emerald-500" : "text-foreground"}`}>
+                            {item.email}
+                          </span>
+                          {item.status === "error" && item.error && (
+                            <span className="text-destructive/70 ml-auto shrink-0">{item.error}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <p className="text-[0.6rem] text-muted-foreground">One email per line, or comma/semicolon separated.</p>
+                </div>
               )}
-              {inviteStatus === "error" && inviteError && (
-                <p className="text-[0.65rem] text-destructive">{inviteError}</p>
-              )}
-            </form>
+            </div>
           )}
         </SheetHeader>
 
