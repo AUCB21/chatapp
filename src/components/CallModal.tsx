@@ -360,7 +360,7 @@ export default function CallModal({
   }, [onAnswerCall]);
 
   // Hidden audio element for remote stream — must be in DOM for autoplay policy
-  const audioEl = <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />;
+  const audioEl = <audio ref={remoteAudioRef as React.RefObject<HTMLAudioElement>} autoPlay playsInline className="hidden" />;
 
   if (callStatus === "idle") return audioEl;
 
