@@ -28,6 +28,8 @@ export interface ChatState {
   unreadCounts: Record<string, number>; // chatId → unread message count
   hasMoreMessages: Record<string, boolean>; // chatId → whether older messages exist
   booted: boolean; // true after boot preload completes
+  starredMessageIds: Set<string>; // preloaded during boot
+  blockedUserIds: Set<string>; // preloaded during boot
 
   // Loading / error per-resource
   loading: {
@@ -65,6 +67,11 @@ export interface ChatState {
   setHasMore: (chatId: string, value: boolean) => void;
   setLoading: (key: keyof ChatState["loading"], value: boolean) => void;
   setError: (key: keyof ChatState["error"], value: string | null) => void;
+  bumpChatToTop: (chatId: string) => void;
+  setStarredMessageIds: (ids: Set<string>) => void;
+  toggleStarredMessage: (messageId: string) => void;
+  setBlockedUserIds: (ids: Set<string>) => void;
+  toggleBlockedUser: (userId: string) => void;
   reset: () => void;
 }
 
@@ -81,6 +88,8 @@ const initialState = {
   unreadCounts: {},
   hasMoreMessages: {},
   booted: false,
+  starredMessageIds: new Set<string>(),
+  blockedUserIds: new Set<string>(),
   loading: { chats: false, messages: false },
   error: { chats: null, messages: null },
 };
@@ -97,14 +106,32 @@ export const useChatStore = create<ChatState>()(
 
       setChats: (chats) =>
         set(
-          (state) => ({
-            chats,
-            // Sync memberships map from chats list (includes "pending")
-            memberships: chats.reduce(
-              (acc, c) => ({ ...acc, [c.id]: c.role }),
-              state.memberships
-            ),
-          }),
+          (state) => {
+            // Sort: self-chat first, then by most recent message in store,
+            // then by chat createdAt desc. Pending/declined go to the bottom.
+            const msgMap = state.messages;
+            const sorted = [...chats].sort((a, b) => {
+              // Self-chat pinned at top
+              if (a.isSelfChat && !b.isSelfChat) return -1;
+              if (!a.isSelfChat && b.isSelfChat) return 1;
+              // Pending/declined at bottom
+              const aInactive = a.role === "pending" || a.role === "declined";
+              const bInactive = b.role === "pending" || b.role === "declined";
+              if (aInactive && !bInactive) return 1;
+              if (!aInactive && bInactive) return -1;
+              // Sort by last message timestamp desc
+              const aLast = msgMap[a.id]?.at(-1)?.createdAt ?? a.createdAt;
+              const bLast = msgMap[b.id]?.at(-1)?.createdAt ?? b.createdAt;
+              return new Date(bLast).getTime() - new Date(aLast).getTime();
+            });
+            return {
+              chats: sorted,
+              memberships: chats.reduce(
+                (acc, c) => ({ ...acc, [c.id]: c.role }),
+                state.memberships
+              ),
+            };
+          },
           false,
           "setChats"
         ),
@@ -402,6 +429,54 @@ export const useChatStore = create<ChatState>()(
           (state) => ({ error: { ...state.error, [key]: value } }),
           false,
           `setError/${key}`
+        ),
+
+      bumpChatToTop: (chatId) =>
+        set(
+          (state) => {
+            const idx = state.chats.findIndex((c) => c.id === chatId);
+            if (idx <= 0) return state; // already first or not found
+            const chat = state.chats[idx];
+            if (chat.isSelfChat) return state; // self-chat stays pinned, no reorder needed
+            // Find insertion point: after self-chats, before other non-self chats
+            const firstNonSelf = state.chats.findIndex((c) => !c.isSelfChat);
+            const insertAt = firstNonSelf === -1 ? 0 : firstNonSelf;
+            if (idx === insertAt) return state;
+            const next = [...state.chats];
+            next.splice(idx, 1);
+            next.splice(insertAt, 0, chat);
+            return { chats: next };
+          },
+          false,
+          "bumpChatToTop"
+        ),
+
+      setStarredMessageIds: (ids) =>
+        set(() => ({ starredMessageIds: ids }), false, "setStarredMessageIds"),
+
+      toggleStarredMessage: (messageId) =>
+        set(
+          (state) => {
+            const next = new Set(state.starredMessageIds);
+            next.has(messageId) ? next.delete(messageId) : next.add(messageId);
+            return { starredMessageIds: next };
+          },
+          false,
+          "toggleStarredMessage"
+        ),
+
+      setBlockedUserIds: (ids) =>
+        set(() => ({ blockedUserIds: ids }), false, "setBlockedUserIds"),
+
+      toggleBlockedUser: (userId) =>
+        set(
+          (state) => {
+            const next = new Set(state.blockedUserIds);
+            next.has(userId) ? next.delete(userId) : next.add(userId);
+            return { blockedUserIds: next };
+          },
+          false,
+          "toggleBlockedUser"
         ),
 
       reset: () => set(initialState, false, "reset"),

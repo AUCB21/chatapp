@@ -8,7 +8,7 @@ import { usePresence } from "@/hooks/usePresence";
 import { useBootLoader } from "@/hooks/useBootLoader";
 import { useIdleDetector } from "@/hooks/useIdleDetector";
 import { useSessionStore } from "@/store/sessionStore";
-import { groupReactions, useChatStore, selectActiveReadReceipts } from "@/store/chatStore";
+import { groupReactions, useChatStore, selectActiveChat, selectActiveReadReceipts } from "@/store/chatStore";
 import { useProfileStore, selectIsDnd, selectProfileStatus } from "@/store/profileStore";
 import { unlockAudio } from "@/lib/sounds";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -154,10 +154,10 @@ function ChatPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [lightboxMedia, setLightboxMedia] = useState<{src: string; mimeType: string; fileName: string} | null>(null);
   const [threadRootId, setThreadRootId] = useState<string | null>(null);
-  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
+  const starredIds = useChatStore((s) => s.starredMessageIds);
+  const blockedUserIds = useChatStore((s) => s.blockedUserIds);
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const [starredPanelOpen, setStarredPanelOpen] = useState(false);
-  const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -175,7 +175,7 @@ function ChatPage() {
   );
 
   const reactionGrouped = useMemo(() => groupReactions(reactions), [reactions]);
-  const activeChat = useMemo(() => chats.find((c) => c.id === activeChatId) ?? null, [chats, activeChatId]);
+  const activeChat = useChatStore(selectActiveChat);
   const isPending = activeChat?.role === "pending";
   const isDeclined = activeChat?.role === "declined";
 
@@ -236,16 +236,7 @@ function ChatPage() {
     hasActiveChat: !!activeChatId,
   });
 
-  /* ── Starred / Pinned / Blocked ── */
-
-  useEffect(() => {
-    fetch("/api/starred").then((r) => r.ok ? r.json() : null).then((j) => {
-      if (j?.data) setStarredIds(new Set(j.data.map((m: { messageId: string }) => m.messageId)));
-    }).catch(() => {});
-    fetch("/api/block").then((r) => r.ok ? r.json() : null).then((j) => {
-      if (j?.data) setBlockedUserIds(new Set(j.data as string[]));
-    }).catch(() => {});
-  }, []);
+  /* ── Pinned messages per active chat ── */
 
   useEffect(() => {
     if (!activeChatId) { setPinnedIds(new Set()); return; }
@@ -531,14 +522,14 @@ function ChatPage() {
   }, [deleteChat]);
 
   const handleToggleStar = useCallback((msgId: string) => {
-    const isStarred = starredIds.has(msgId);
-    setStarredIds((prev) => { const s = new Set(prev); isStarred ? s.delete(msgId) : s.add(msgId); return s; });
+    const isStarred = useChatStore.getState().starredMessageIds.has(msgId);
+    useChatStore.getState().toggleStarredMessage(msgId);
     fetch("/api/starred", {
       method: isStarred ? "DELETE" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messageId: msgId }),
     }).catch(() => {});
-  }, [starredIds]);
+  }, []);
 
   const handleTogglePin = useCallback((msgId: string) => {
     if (!activeChatId) return;
@@ -552,14 +543,14 @@ function ChatPage() {
   }, [activeChatId, pinnedIds]);
 
   const handleToggleBlock = useCallback((userId: string) => {
-    const isBlocked = blockedUserIds.has(userId);
-    setBlockedUserIds((prev) => { const s = new Set(prev); isBlocked ? s.delete(userId) : s.add(userId); return s; });
+    const isBlocked = useChatStore.getState().blockedUserIds.has(userId);
+    useChatStore.getState().toggleBlockedUser(userId);
     fetch("/api/block", {
       method: isBlocked ? "DELETE" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId }),
     }).catch(() => {});
-  }, [blockedUserIds]);
+  }, []);
 
   const handleJumpToMessage = useCallback((messageId: string) => {
     const target = document.querySelector(

@@ -286,6 +286,9 @@ export function useChat(): UseChatReturn {
             state.incrementUnread(chatId);
           }
 
+          // Bump the chat to the top of the list
+          state.bumpChatToTop(chatId);
+
           // Check mute status
           const isMuted = (() => {
             try {
@@ -755,6 +758,7 @@ export function useChat(): UseChatReturn {
       };
 
       appendMessage(activeChatId, optimisticMsg);
+      useChatStore.getState().bumpChatToTop(activeChatId);
 
       try {
         let res: Response;

@@ -154,6 +154,26 @@ export function useBootLoader(): BootState {
 
       if (cancelled) return;
 
+      // Step 4 — Preload starred message IDs + blocked user IDs
+      setState({ ready: false, progress: 90, label: "Loading preferences..." });
+      try {
+        const [starredRes, blockedRes] = await Promise.allSettled([
+          fetch("/api/starred").then((r) => r.ok ? r.json() : null),
+          fetch("/api/block").then((r) => r.ok ? r.json() : null),
+        ]);
+        const { setStarredMessageIds, setBlockedUserIds } = useChatStore.getState();
+        if (starredRes.status === "fulfilled" && starredRes.value?.data) {
+          setStarredMessageIds(new Set(starredRes.value.data.map((m: { messageId: string }) => m.messageId)));
+        }
+        if (blockedRes.status === "fulfilled" && blockedRes.value?.data) {
+          setBlockedUserIds(new Set(blockedRes.value.data as string[]));
+        }
+      } catch {
+        // Non-fatal
+      }
+
+      if (cancelled) return;
+
       // Done
       setState({ ready: false, progress: 100, label: "Almost ready..." });
       await new Promise((r) => setTimeout(r, 300));

@@ -90,7 +90,11 @@
 - **65. Starred Messages panel access** — Star icon button added to ChatHeader toolbar, opens StarredPanel Sheet.
 - **66. Full-Text Search UI upgrade** — Search bar fires debounced FTS API call (`?search=`), shows results panel with highlighted match terms, click jumps to message.
 
+---
+
 ## 🔵 Pending — No migration needed
 
 1. **49. Call Flow Completion**
    Finish WebRTC signaling, ringtone, multi-screen call UI. Full-screen call modal with avatar, controls bar (mic/video/screenshare/hangup), connection status badge. Screen sharing may need fixing.
+
+~~2. **67. Frontend Refactor** — Done: chat list sorted by last message desc (self-chat pinned, `bumpChatToTop` on new messages); starred+blocked IDs loaded during boot preload and stored in `chatStore` (removed 2 redundant mount-time fetches); `activeChat` now reads from `selectActiveChat` store selector instead of `useMemo` over full chats array.~~
