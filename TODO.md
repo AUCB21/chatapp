@@ -99,3 +99,80 @@
 ~~2. **68. Call Minimize / Floating PiP** — Minimize button collapses full-screen call modal to a small draggable floating pill (pointer-capture drag, clamped to viewport). Pip shows remote avatar, speaking indicator, call timer, mute toggle, hang-up, and expand button. Auto-expands on incoming call or call end.~~
 
 ~~2. **67. Frontend Refactor** — Done: chat list sorted by last message desc (self-chat pinned, `bumpChatToTop` on new messages); starred+blocked IDs loaded during boot preload and stored in `chatStore` (removed 2 redundant mount-time fetches); `activeChat` now reads from `selectActiveChat` store selector instead of `useMemo` over full chats array.~~
+
+---
+
+## 🔴 Pending — Blockers (must ship before v1)
+
+- **69. Rate Limiting** — Server-side rate limits on auth, messages, invites, and file uploads. Upstash Redis or Vercel edge middleware. (3/hr forgot-password, 60/min messages, 10/hr invites, 20/hr uploads)
+- **70. Security Headers** — CSP, HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy in `next.config.ts`. ~2–4 hours.
+- **71. ToS + Privacy Policy Consent** — Checkbox on signup. `consented_at` timestamp in `user_profiles`. Block API for non-consented users. (GDPR / CCPA)
+- **72. Message Delivery Status** — Single tick (sent), double tick grey (delivered), double tick colored (read) in `MessageBubble` on own messages. DB schema already supports it.
+- **73. Email Notifications for Missed Messages** — Track last-seen per user. Resend / SendGrid trigger after 15 min inactivity with unread messages. Daily digest option. Unsubscribe link (CAN-SPAM).
+- **74. Admin Dashboard** — `/admin` route gated by `is_admin`. Pages: Users (manage/suspend/delete), Chats, Abuse Reports, Usage stats, Audit Log.
+- **75. Billing / Stripe** — Subscription plans (Free / Pro / Team), Stripe webhook at `/api/webhooks/stripe`, plan enforcement in API routes, billing portal in Settings.
+
+---
+
+## 🟠 Pending — High Priority
+
+- **76. 2FA (TOTP)** — Supabase `enrollFactor` / `challengeAndVerify`. Setup in Settings > Security with recovery codes. Re-verify gate on password change and account deletion.
+- **77. Orphaned File Cleanup** — On message hard-delete or nightly cron, `supabase.storage.remove()` orphaned attachments. Also clean up on account deletion.
+- **78. Per-User Storage Quota** — `storage_used_bytes` in `user_profiles`. Increment/decrement on upload/delete. Reject uploads over plan limit. (Extends #11)
+- **79. Virtual List for Messages** — `@tanstack/react-virtual` replacing `ScrollArea` message list. Variable row heights + scroll anchoring.
+- **80. Image Thumbnails** — Supabase Storage Image Transformations (`?width=400&quality=80`) in message bubbles; full resolution only in lightbox.
+- **81. @Mentions** — `@` in `MessageInput` triggers member autocomplete. Stored as `@[userId:displayName]` token. Badge in `MessageBubble`. Bypasses mute; orange unread badge for mentions.
+- **82. Link Previews** — `GET /api/link-preview?url=` server-side OG scraper. `link_previews` cache table. Card rendered below message text.
+- **83. Web Push Notifications (FCM)** — Service worker + Web Push API. `push_subscriptions` table. Server-side trigger on new messages / calls. (Distinct from existing in-tab notifications #18.)
+- **84. Error Tracking (Sentry)** — `@sentry/nextjs`. Wrap API routes. User context on login. Slack/email alerts for new error types. ~4 hours.
+- **85. Analytics** — PostHog (self-hostable) or Plausible. Custom events: message sent, call started, file uploaded, search performed.
+- **86. Video Calls (1:1)** — Camera track alongside mic in `requestMicrophoneAccess`. `<video>` elements in `CallModal`. Camera toggle + PiP local preview.
+- **87. Group Calls (LiveKit SFU)** — Replace `useVoiceCall` P2P WebRTC with LiveKit SDK. N-participant calls, recording, simulcast. Architectural change.
+
+---
+
+## 🟡 Pending — Medium Priority
+
+- **88. Disappearing Messages** — Per-chat `message_ttl` (24h / 7d / 30d / off). Cron deletes expired messages. TTL badge in `ChatHeader`.
+- **89. Audit Log** — `audit_logs(actor_id, action, target_type, target_id, metadata jsonb, created_at)`. Log role changes, member removes, chat deletes, admin actions. Read-only in admin dashboard.
+- **90. Session Management UI** — Settings > Security: list active sessions (device, IP, last seen). "Sign out all other sessions" via Supabase Auth API.
+- **91. PWA / Service Worker** — `next-pwa` or manual service worker. Cache app shell + static assets. Background sync for offline messages.
+- **92. Reduce Realtime Channel Count** — Consolidate 4–6 subscriptions per chat to 1 broadcast channel with a `type` field in the payload.
+- **93. highlight.js Bundle Optimization** — Verify unused languages are tree-shaken (`@next/bundle-analyzer`). Consider `lowlight` or dynamic import per code block.
+- **94. Draft Message Persistence** — Debounced `localStorage` draft per `chatId`. Restore on chat open. Clear on send. ~2 hours.
+- **95. Reaction Summary Tooltip** — Hover/click reaction group → popover listing reactor display names. Data already in `reactions` table. ~4 hours.
+- **96. Call History** — Calls tab in sidebar or chat: past calls with caller, duration, missed/answered. `GET /api/chat/[chatId]/calls?history=true`.
+- **97. Chat Folders / Organization** — User-created folders with drag-to-assign. `chat_folders` table. Collapsible in sidebar.
+- **98. Onboarding Flow** — First-login wizard: set name + avatar → invite first contact → feature tour. Track `onboarding_completed` in `user_profiles`.
+- **99. Message Formatting Toolbar** — Collapsed `Aa` toggle in `MessageInput`: Bold, Italic, Code, Code block, Link, Strikethrough. Inserts markdown at cursor.
+- **100. Voice Messages** — Hold-to-record via `MediaRecorder`. Preview before send. Upload as `.webm`. Inline `<audio>` player with waveform.
+- **101. Notification Preferences** — Per-chat: All / Only @mentions / Off. Time-based DND (e.g. 10pm–8am). `notification_preferences` table.
+- **102. Abuse Reporting** — "Report" in message hover bar and user profile menu. `reports(reporter_id, target_type, target_id, reason, created_at)`. Surfaces in admin dashboard.
+- **103. CI/CD Pipeline** — GitHub Actions: lint → type-check → test → Vercel deploy on `main`. PR checks block on type errors. ~4 hours.
+- **104. Automated Tests** — Vitest unit (schemas, store selectors) + integration (API routes + real DB) + Playwright E2E (login, message, file, call). Build incrementally.
+- **105. Noise Cancellation** — `@ricky0123/vad-web` VAD or Krisp browser SDK for real noise suppression in calls.
+- **106. Call Recording** — LiveKit recording API (requires #87 SFU). `.mp4` stored in Supabase Storage, linked in call history.
+- **107. White-Label / Tenant Branding** — `tenants(logo_url, primary_color, app_name, custom_domain)`. Subdomain middleware. CSS variable override server-side.
+- **108. Public API / Webhooks** — `X-API-Key` REST API. Events: `on_message`, `on_member_join`, `on_call_started`. `api_keys` + `webhook_subscriptions` tables. Auto-generated OpenAPI spec.
+
+---
+
+## 🟢 Pending — Low Priority / Polish
+
+- **109. Message Forwarding** — "Forward" in hover bar → chat picker → send with optional "Forwarded from" attribution.
+- **110. Message Scheduling** — Clock icon → datetime picker. `scheduled_messages` table. Vercel cron / Supabase scheduled function sends at target time.
+- **111. Slash Commands** — `/` at input start → command picker. Start with `/poll`, `/remind`, `/giphy`. Framework ~1 day + ~1 day per command.
+- **112. Improved Search UI** — Filters: date range, sender, chat, file type. Results grouped by chat. (Extends #66.)
+- **113. PgBouncer Connection Pooling** — Enable Supabase built-in PgBouncer. Update `DATABASE_URL` to pooler endpoint. Config-only, ~30 min.
+- **114. Bundle Analysis** — `@next/bundle-analyzer`. Run `ANALYZE=true next build` to surface heavy imports.
+- **115. Health Check Endpoint** — `GET /api/health` → DB connectivity → `{ status, db, latency_ms }`. ~1 hour.
+- **116. Deployment Documentation** — `README.md`: prerequisites, env var reference, local + Supabase setup, "Deploy to Vercel" button.
+
+---
+
+## 🔵 Future — Post-v1
+
+- **E2E Encryption** — libsodium sealed-box, client-side key derivation (PBKDF2), keys never leave device. Requires full search redesign. v2.
+- **Localization (i18n)** — `next-intl` or `i18next`. Start with English + Spanish.
+- **Native Mobile App** — React Native / Expo sharing the API layer.
+- **SSO / SAML** — Enterprise identity provider integration for Team plan.

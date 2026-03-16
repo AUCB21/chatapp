@@ -18,11 +18,14 @@ import { useProfileStore } from "@/store/profileStore";
 interface UseVoiceCallReturn {
   callStatus: VoiceCallStatus;
   isMuted: boolean;
+  isRemoteMuted: boolean;
   isSpeaking: boolean;
   isRemoteSpeaking: boolean;
   isIncomingCall: boolean;
   caller: CallerInfo | null;
   error: string | null;
+  remoteAudioRef: React.RefObject<HTMLAudioElement | null>;
+  remoteStream: MediaStream | null;
   startCall: () => Promise<void>;
   answerCall: () => Promise<void>;
   rejectCall: () => void;
@@ -34,13 +37,26 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
   const userId = useSessionStore((s) => s.user?.id ?? null);
   const userEmail = useSessionStore((s) => s.user?.email ?? null);
 
+  // Lock chatId for the duration of an active call so navigating between
+  // chats doesn't re-initialize the hook and kill the connection.
+  const lockedChatIdRef = useRef<string | null>(chatId);
+
   const [callStatus, setCallStatus] = useState<VoiceCallStatus>("idle");
   const [isMuted, setIsMuted] = useState(false);
+  const [isRemoteMuted, setIsRemoteMuted] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isRemoteSpeaking, setIsRemoteSpeaking] = useState(false);
   const [isIncomingCall, setIsIncomingCall] = useState(false);
   const [caller, setCaller] = useState<CallerInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+
+  // Only update the locked chatId when the call is idle — prevents the
+  // Realtime channel from being torn down if the user switches chats mid-call.
+  if (callStatus === "idle") {
+    lockedChatIdRef.current = chatId;
+  }
+  const effectiveChatId = lockedChatIdRef.current;
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -72,12 +88,8 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
     }
   }, []);
 
-  useEffect(() => {
-    if (typeof window !== "undefined" && !remoteAudioRef.current) {
-      remoteAudioRef.current = new Audio();
-      remoteAudioRef.current.autoplay = true;
-    }
-  }, []);
+  // remoteAudioRef is attached to a real DOM <audio> element rendered in CallModal
+  // so the browser's autoplay policy is satisfied by the user gesture that started/answered the call.
 
   // --- Ringtone + browser notification on incoming call ---
   useEffect(() => {
@@ -143,8 +155,10 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
     setIsIncomingCall(false);
     setCaller(null);
     setIsMuted(false);
+    setIsRemoteMuted(false);
     setIsSpeaking(false);
     setIsRemoteSpeaking(false);
+    setRemoteStream(null);
     setError(null);
     callIdRef.current = null;
     isHostRef.current = false;
@@ -153,19 +167,19 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
   }, []);
 
   const syncCallSession = useCallback(async () => {
-    if (!chatId || !userId) return;
+    if (!effectiveChatId || !userId) return;
 
-    // Never let DB sync downgrade a WebRTC-established connection
+    // Skip only if already in the ended/cleanup state
     const current = callStatusRef.current;
-    if (current === "connected" || current === "ended") return;
+    if (current === "ended") return;
 
     try {
-      const res = await fetch(`/api/chat/${chatId}/call`);
+      const res = await fetch(`/api/chat/${effectiveChatId}/call`);
       if (!res.ok) return;
 
-      // Re-check after await — status may have changed during the fetch
+      // Re-check after await
       const postFetchStatus = callStatusRef.current;
-      if (postFetchStatus === "connected" || postFetchStatus === "ended") return;
+      if (postFetchStatus === "ended") return;
 
       const json = await res.json();
       const activeCall = json?.data?.activeCall ?? null;
@@ -176,12 +190,23 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
       }>;
 
       if (!activeCall) {
+        // Session was deleted (host ended call from another client) — treat as call-end
         callIdRef.current = null;
         isHostRef.current = false;
         if (callStatusRef.current !== "idle") {
-          setCallStatus("idle");
-          setIsIncomingCall(false);
-          setCaller(null);
+          // Use showEnded path if we were connected, otherwise just reset
+          if (callStatusRef.current === "connected") {
+            cleanupCall();
+            setCallStatus("ended");
+            endedTimerRef.current = setTimeout(() => {
+              endedTimerRef.current = null;
+              setCallStatus("idle");
+            }, 2000);
+          } else {
+            setCallStatus("idle");
+            setIsIncomingCall(false);
+            setCaller(null);
+          }
         }
         return;
       }
@@ -215,13 +240,13 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
     } catch {
       // Non-fatal sync
     }
-  }, [chatId, userId]);
+  }, [effectiveChatId, userId, cleanupCall]);
 
   const ensureActiveCallId = useCallback(async () => {
-    if (!chatId) return null;
+    if (!effectiveChatId) return null;
     if (callIdRef.current) return callIdRef.current;
 
-    const res = await fetch(`/api/chat/${chatId}/call`);
+    const res = await fetch(`/api/chat/${effectiveChatId}/call`);
     const json = await res.json().catch(() => null);
 
     if (!res.ok) throw new Error(json?.error || "Failed to find active call");
@@ -231,7 +256,7 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
 
     callIdRef.current = activeCallId;
     return activeCallId;
-  }, [chatId]);
+  }, [effectiveChatId]);
 
   const cleanupChannel = useCallback(() => {
     if (channelRef.current) {
@@ -250,70 +275,6 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
       });
     } catch (err) {
       console.error("[Voice] Failed to send signal:", err);
-    }
-  }, []);
-
-  const setupPeerConnectionListeners = useCallback(
-    (pc: RTCPeerConnection) => {
-      pc.onicecandidate = (event) => {
-        if (event.candidate && userIdRef.current) {
-          sendSignal({
-            type: "ice-candidate",
-            from: userIdRef.current,
-            candidate: event.candidate.toJSON(),
-          });
-        }
-      };
-
-      pc.ontrack = (event) => {
-        const [remoteStream] = event.streams;
-        remoteStreamRef.current = remoteStream;
-        if (remoteAudioRef.current) {
-          remoteAudioRef.current.srcObject = remoteStream;
-        }
-        startAudioLevelPolling(localStreamRef.current, remoteStream);
-      };
-
-      pc.onconnectionstatechange = () => {
-        if (pc.connectionState === "connected") {
-          // Clear any pending disconnect timer — connection recovered
-          if (disconnectTimerRef.current) {
-            clearTimeout(disconnectTimerRef.current);
-            disconnectTimerRef.current = null;
-          }
-          startAudioLevelPolling(localStreamRef.current, remoteStreamRef.current);
-          setCallStatus("connected");
-        } else if (pc.connectionState === "failed") {
-          setError("Connection lost");
-          cleanupCall();
-        } else if (pc.connectionState === "disconnected") {
-          // "disconnected" is transient — wait before cleaning up
-          if (!disconnectTimerRef.current) {
-            disconnectTimerRef.current = setTimeout(() => {
-              disconnectTimerRef.current = null;
-              if (peerConnectionRef.current?.connectionState === "disconnected") {
-                setError("Connection lost");
-                cleanupCall();
-              }
-            }, 5000);
-          }
-        }
-      };
-    },
-    [sendSignal, cleanupCall, startAudioLevelPolling]
-  );
-
-  const flushIceCandidates = useCallback(async () => {
-    const pc = peerConnectionRef.current;
-    if (!pc || !pc.remoteDescription) return;
-
-    const queued = iceCandidateQueue.current.splice(0);
-    for (const candidate of queued) {
-      try {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (err) {
-        console.error("[Voice] Failed to add queued ICE candidate:", err);
-      }
     }
   }, []);
 
@@ -361,6 +322,73 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
     poll();
   }, []);
 
+  const setupPeerConnectionListeners = useCallback(
+    (pc: RTCPeerConnection) => {
+      pc.onicecandidate = (event) => {
+        if (event.candidate && userIdRef.current) {
+          sendSignal({
+            type: "ice-candidate",
+            from: userIdRef.current,
+            candidate: event.candidate.toJSON(),
+          });
+        }
+      };
+
+      pc.ontrack = (event) => {
+        const [stream] = event.streams;
+        remoteStreamRef.current = stream;
+        // Set srcObject directly if the audio element is already mounted,
+        // and also store in state so CallModal's useEffect can attach it on mount.
+        if (remoteAudioRef.current) {
+          remoteAudioRef.current.srcObject = stream;
+        }
+        setRemoteStream(stream);
+        startAudioLevelPolling(localStreamRef.current, stream);
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === "connected") {
+          // Clear any pending disconnect timer — connection recovered
+          if (disconnectTimerRef.current) {
+            clearTimeout(disconnectTimerRef.current);
+            disconnectTimerRef.current = null;
+          }
+          startAudioLevelPolling(localStreamRef.current, remoteStreamRef.current);
+          setCallStatus("connected");
+        } else if (pc.connectionState === "failed") {
+          setError("Connection lost");
+          cleanupCall();
+        } else if (pc.connectionState === "disconnected") {
+          // "disconnected" is transient — wait before cleaning up
+          if (!disconnectTimerRef.current) {
+            disconnectTimerRef.current = setTimeout(() => {
+              disconnectTimerRef.current = null;
+              if (peerConnectionRef.current?.connectionState === "disconnected") {
+                setError("Connection lost");
+                cleanupCall();
+              }
+            }, 5000);
+          }
+        }
+      };
+    },
+    [sendSignal, cleanupCall, startAudioLevelPolling]
+  );
+
+  const flushIceCandidates = useCallback(async () => {
+    const pc = peerConnectionRef.current;
+    if (!pc || !pc.remoteDescription) return;
+
+    const queued = iceCandidateQueue.current.splice(0);
+    for (const candidate of queued) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.error("[Voice] Failed to add queued ICE candidate:", err);
+      }
+    }
+  }, []);
+
   // --- Signal handlers ---
 
   const handleIncomingOffer = useCallback(
@@ -406,7 +434,7 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
           try {
             const activeCallId = await ensureActiveCallId();
             const joinRes = await fetch(
-              `/api/chat/${chatId}/call/${activeCallId}/participants`,
+              `/api/chat/${effectiveChatId}/call/${activeCallId}/participants`,
               { method: "POST" }
             );
             if (!joinRes.ok) {
@@ -437,7 +465,7 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
         cleanupCall();
       }
     },
-    [chatId, sendSignal, setupPeerConnectionListeners, cleanupCall, ensureActiveCallId, flushIceCandidates]
+    [effectiveChatId, sendSignal, setupPeerConnectionListeners, cleanupCall, ensureActiveCallId, flushIceCandidates]
   );
 
   const handleAnswer = useCallback(
@@ -482,10 +510,10 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
   const showEnded = useCallback(
     (msg?: string) => {
       // End/leave the call in the DB before local cleanup clears refs
-      if (chatId && callIdRef.current) {
+      if (effectiveChatId && callIdRef.current) {
         const endpoint = isHostRef.current
-          ? `/api/chat/${chatId}/call`
-          : `/api/chat/${chatId}/call/${callIdRef.current}/participants`;
+          ? `/api/chat/${effectiveChatId}/call`
+          : `/api/chat/${effectiveChatId}/call/${callIdRef.current}/participants`;
         fetch(endpoint, { method: "DELETE" }).catch(() => {});
       }
       cleanupCall();
@@ -497,7 +525,7 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
         setError(null);
       }, msg ? 3000 : 2000);
     },
-    [cleanupCall, chatId]
+    [cleanupCall, effectiveChatId]
   );
 
   // Stable ref for signal dispatch (avoids stale closure in channel listener)
@@ -514,14 +542,17 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
         return showEnded();
       case "call-reject":
         return showEnded("Call was declined");
+      case "call-mute":
+        setIsRemoteMuted(payload.isMuted);
+        return;
     }
   };
 
   // --- Realtime channel ---
   useEffect(() => {
-    if (!chatId || !userId) return;
+    if (!effectiveChatId || !userId) return;
 
-    const channel = supabase.channel(`voice:${chatId}`);
+    const channel = supabase.channel(`voice:${effectiveChatId}`);
 
     const debouncedSync = () => {
       if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
@@ -532,7 +563,7 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
     };
 
     channel
-      .on("postgres_changes", { event: "*", schema: "public", table: "call_sessions", filter: `chat_id=eq.${chatId}` }, debouncedSync)
+      .on("postgres_changes", { event: "*", schema: "public", table: "call_sessions", filter: `chat_id=eq.${effectiveChatId}` }, debouncedSync)
       .on("postgres_changes", { event: "*", schema: "public", table: "call_participants" }, debouncedSync)
       .on("broadcast", { event: "voice-signal" }, async ({ payload }: { payload: VoiceSignalType }) => {
         if (payload.from === userIdRef.current) return;
@@ -552,19 +583,19 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
       cleanupCall();
       cleanupChannel();
     };
-  }, [chatId, userId, cleanupCall, cleanupChannel, syncCallSession]);
+  }, [effectiveChatId, userId, cleanupCall, cleanupChannel, syncCallSession]);
 
   // --- Actions ---
 
   const startCall = useCallback(async () => {
-    if (!userId || !chatId) return;
+    if (!userId || !effectiveChatId) return;
     setError(null);
     setCallStatus("calling");
     isHostRef.current = true;
 
     try {
       const [createRes, stream] = await Promise.all([
-        fetch(`/api/chat/${chatId}/call`, { method: "POST" }),
+        fetch(`/api/chat/${effectiveChatId}/call`, { method: "POST" }),
         requestMicrophoneAccess(),
       ]);
 
@@ -604,10 +635,10 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
       setError(err instanceof Error ? err.message : "Failed to start call");
       cleanupCall();
     }
-  }, [userId, userEmail, chatId, sendSignal, setupPeerConnectionListeners, cleanupCall]);
+  }, [userId, userEmail, effectiveChatId, sendSignal, setupPeerConnectionListeners, cleanupCall]);
 
   const answerCall = useCallback(async () => {
-    if (!userId || !chatId) return;
+    if (!userId || !effectiveChatId) return;
     setError(null);
     setIsIncomingCall(false);
 
@@ -621,7 +652,7 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
 
       const [stream, joinRes] = await Promise.all([
         requestMicrophoneAccess(),
-        fetch(`/api/chat/${chatId}/call/${activeCallId}/participants`, { method: "POST" }),
+        fetch(`/api/chat/${effectiveChatId}/call/${activeCallId}/participants`, { method: "POST" }),
       ]);
 
       if (!joinRes.ok) {
@@ -646,16 +677,16 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
       setError(err instanceof Error ? err.message : "Failed to answer call");
       cleanupCall();
     }
-  }, [userId, chatId, sendSignal, cleanupCall, ensureActiveCallId]);
+  }, [userId, effectiveChatId, sendSignal, cleanupCall, ensureActiveCallId]);
 
   const rejectCall = useCallback(() => {
     if (!userId) return;
-    if (chatId && callIdRef.current) {
-      fetch(`/api/chat/${chatId}/call/${callIdRef.current}/participants`, { method: "DELETE" }).catch(() => {});
+    if (effectiveChatId && callIdRef.current) {
+      fetch(`/api/chat/${effectiveChatId}/call/${callIdRef.current}/participants`, { method: "DELETE" }).catch(() => {});
     }
     sendSignal({ type: "call-reject", from: userId });
     cleanupCall();
-  }, [userId, chatId, sendSignal, cleanupCall]);
+  }, [userId, effectiveChatId, sendSignal, cleanupCall]);
 
   const hangUp = useCallback(() => {
     if (!userId) return;
@@ -667,8 +698,12 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
     setIsMuted((prev) => {
       const next = !prev;
       toggleStreamMute(localStreamRef.current, next);
-      if (chatId && callIdRef.current) {
-        fetch(`/api/chat/${chatId}/call/${callIdRef.current}/participants`, {
+      // Broadcast mute state to remote peer immediately
+      if (userIdRef.current) {
+        sendSignal({ type: "call-mute", from: userIdRef.current, isMuted: next });
+      }
+      if (effectiveChatId && callIdRef.current) {
+        fetch(`/api/chat/${effectiveChatId}/call/${callIdRef.current}/participants`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ isMuted: next }),
@@ -676,7 +711,7 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
       }
       return next;
     });
-  }, [chatId]);
+  }, [effectiveChatId, sendSignal]);
 
-  return { callStatus, isMuted, isSpeaking, isRemoteSpeaking, isIncomingCall, caller, error, startCall, answerCall, rejectCall, hangUp, toggleMute };
+  return { callStatus, isMuted, isRemoteMuted, isSpeaking, isRemoteSpeaking, isIncomingCall, caller, error, remoteAudioRef, remoteStream, startCall, answerCall, rejectCall, hangUp, toggleMute };
 }

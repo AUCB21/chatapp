@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, type RefObject } from "react";
 import type { ScreenShareOptions } from "@/lib/webrtc";
 
 interface CallModalProps {
   chatName: string;
   callStatus: VoiceCallStatus;
   isMuted: boolean;
+  isRemoteMuted: boolean;
   isSpeaking: boolean;
   isRemoteSpeaking: boolean;
   caller: CallerInfo | null;
@@ -14,6 +15,8 @@ interface CallModalProps {
   isIncomingCall: boolean;
   currentUserEmail: string | null;
   remoteParticipantName: string | null;
+  remoteAudioRef: RefObject<HTMLAudioElement | null>;
+  remoteStream: MediaStream | null;
   onAnswerCall: () => Promise<void>;
   onRejectCall: () => void;
   onHangUp: () => void;
@@ -296,6 +299,7 @@ export default function CallModal({
   chatName,
   callStatus,
   isMuted,
+  isRemoteMuted,
   isSpeaking,
   isRemoteSpeaking,
   caller,
@@ -303,6 +307,8 @@ export default function CallModal({
   isIncomingCall,
   currentUserEmail,
   remoteParticipantName,
+  remoteAudioRef,
+  remoteStream,
   onAnswerCall,
   onRejectCall,
   onHangUp,
@@ -314,6 +320,15 @@ export default function CallModal({
   const [callDuration, setCallDuration] = useState(0);
   const [answering, setAnswering] = useState(false);
   const [minimized, setMinimized] = useState(false);
+
+  // Attach remote stream to audio element as soon as both are available.
+  // This handles the race where ontrack fires before the <audio> mounts.
+  useEffect(() => {
+    if (remoteAudioRef.current && remoteStream) {
+      remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.play().catch(() => {});
+    }
+  }, [remoteStream, remoteAudioRef]);
 
   // Reset minimized when call ends or new incoming call arrives
   useEffect(() => {
@@ -335,7 +350,7 @@ export default function CallModal({
     if (shareStatus === "sharing") {
       onStopSharing();
     } else if (shareStatus === "idle") {
-      onStartSharing({ resolution: "1080p", includeAudio: false });
+      onStartSharing({ resolution: "720p", includeAudio: false });
     }
   }, [shareStatus, onStartSharing, onStopSharing]);
 
@@ -344,10 +359,13 @@ export default function CallModal({
     try { await onAnswerCall(); } finally { setAnswering(false); }
   }, [onAnswerCall]);
 
-  if (callStatus === "idle") return null;
+  // Hidden audio element for remote stream — must be in DOM for autoplay policy
+  const audioEl = <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />;
+
+  if (callStatus === "idle") return audioEl;
 
   const currentUserName = currentUserEmail?.split("@")[0] ?? "You";
-  const remoteName = remoteParticipantName || caller?.name || "Unknown";
+  const remoteName = remoteParticipantName || caller?.name || chatName || "Unknown";
 
   const isConnected = callStatus === "connected";
   const isCalling = callStatus === "calling";
@@ -367,7 +385,9 @@ export default function CallModal({
   // Minimized pip — only shown during active/calling/ringing (not incoming or ended)
   if (minimized && !isIncomingCall && !isEnded) {
     return (
-      <FloatingPip
+      <>
+        {audioEl}
+        <FloatingPip
         chatName={chatName}
         callStatus={callStatus}
         isMuted={isMuted}
@@ -379,10 +399,13 @@ export default function CallModal({
         onToggleMute={onToggleMute}
         onHangUp={onHangUp}
       />
+      </>
     );
   }
 
   return (
+    <>
+    {audioEl}
     <div className="fixed inset-0 z-50 flex flex-col overflow-hidden" style={{ background: "linear-gradient(160deg, #0d1117 0%, #161b26 40%, #0d1117 100%)" }}>
       {/* Subtle noise texture overlay */}
       <div className="absolute inset-0 pointer-events-none opacity-[0.03]"
@@ -497,7 +520,8 @@ export default function CallModal({
               <ParticipantAvatar
                 initial={getInitials(remoteName)}
                 label={remoteName}
-                speaking={isConnected && isRemoteSpeaking}
+                speaking={isConnected && isRemoteSpeaking && !isRemoteMuted}
+                muted={isRemoteMuted}
                 color="linear-gradient(135deg, #d97706, #b45309)"
               />
             )}
@@ -550,13 +574,13 @@ export default function CallModal({
           <div className="flex items-end justify-center gap-3 px-6">
             {/* Mute */}
             <div className="flex flex-col items-center gap-2">
-              <ControlButton onClick={onToggleMute} active={isMuted} title={isMuted ? "Unmute" : "Mute"}>
+              <ControlButton onClick={onToggleMute} active={isMuted} size="lg" title={isMuted ? "Unmute" : "Mute"}>
                 {isMuted ? (
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 19L5 5M12 18.75a6 6 0 006-6v-1.5M6 13.5v-1.5a6 6 0 016-6m0 0V4.5a3 3 0 116 0v1.5" />
                   </svg>
                 ) : (
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
                   </svg>
                 )}
@@ -570,9 +594,10 @@ export default function CallModal({
                 <ControlButton
                   onClick={handleScreenShare}
                   active={shareStatus === "sharing"}
+                  size="lg"
                   title={shareStatus === "sharing" ? "Stop sharing" : "Share screen"}
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25" />
                   </svg>
                 </ControlButton>
@@ -595,5 +620,6 @@ export default function CallModal({
         )}
       </div>
     </div>
+    </>
   );
 }

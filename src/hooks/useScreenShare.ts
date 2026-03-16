@@ -161,6 +161,8 @@ export function useScreenShare(chatId: string | null): UseScreenShareReturn {
       if (!peerConnectionRef.current) {
         const pc = createPeerConnection();
         setupPeerConnectionListeners(pc, false);
+        // Need recvonly transceivers so the answer SDP includes video/audio sections
+        pc.addTransceiver("video", { direction: "recvonly" });
         peerConnectionRef.current = pc;
       }
 
@@ -173,10 +175,10 @@ export function useScreenShare(chatId: string | null): UseScreenShareReturn {
         const answer = await peerConnectionRef.current.createAnswer();
         await peerConnectionRef.current.setLocalDescription(answer);
 
-        sendSignal({
+        await sendSignal({
           type: "screen-answer",
           from: uid,
-          answer,
+          answer: peerConnectionRef.current.localDescription!.toJSON(),
         });
       } catch {
         setError("Failed to process screen share");
@@ -313,7 +315,7 @@ export function useScreenShare(chatId: string | null): UseScreenShareReturn {
           type: "screen-offer",
           from: userId,
           fromName: profileName || userEmail || "Anonymous",
-          offer,
+          offer: pc.localDescription!.toJSON(),
         });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to start screen sharing");
