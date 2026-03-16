@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import type { ScreenShareOptions } from "@/lib/webrtc";
 
 interface CallModalProps {
   chatName: string;
   callStatus: VoiceCallStatus;
   isMuted: boolean;
+  isSpeaking: boolean;
+  isRemoteSpeaking: boolean;
   caller: CallerInfo | null;
   error: string | null;
   isIncomingCall: boolean;
@@ -55,11 +57,7 @@ function ControlButton({
   if (danger) bg = "bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/30";
 
   return (
-    <button
-      onClick={onClick}
-      title={title}
-      className={`${base} ${dim} ${bg}`}
-    >
+    <button onClick={onClick} title={title} className={`${base} ${dim} ${bg}`}>
       {children}
     </button>
   );
@@ -81,16 +79,24 @@ function ParticipantAvatar({
   return (
     <div className="flex flex-col items-center gap-3">
       <div className="relative">
-        {/* Speaking ring */}
+        {/* Speaking/muted glow ring */}
         <div
           className={`absolute inset-0 rounded-full transition-all duration-300 ${
-            speaking ? "scale-110 opacity-100" : "scale-100 opacity-0"
+            muted ? "scale-110 opacity-100" : speaking ? "scale-110 opacity-100" : "scale-100 opacity-0"
           }`}
-          style={{ background: `radial-gradient(circle, transparent 55%, rgba(74,222,128,0.35) 70%, transparent 85%)` }}
+          style={{
+            background: muted
+              ? `radial-gradient(circle, transparent 55%, rgba(239,68,68,0.35) 70%, transparent 85%)`
+              : `radial-gradient(circle, transparent 55%, rgba(74,222,128,0.35) 70%, transparent 85%)`,
+          }}
         />
         <div
           className={`w-20 h-20 md:w-24 md:h-24 rounded-full flex items-center justify-center text-2xl md:text-3xl font-semibold text-white shadow-xl transition-all duration-300 ${
-            speaking ? "ring-2 ring-emerald-400/70 ring-offset-2 ring-offset-transparent" : "ring-2 ring-white/10"
+            muted
+              ? "ring-2 ring-red-500/70 ring-offset-2 ring-offset-transparent"
+              : speaking
+              ? "ring-2 ring-emerald-400/70 ring-offset-2 ring-offset-transparent"
+              : "ring-2 ring-white/10"
           }`}
           style={{ background: color }}
         >
@@ -110,10 +116,188 @@ function ParticipantAvatar({
   );
 }
 
+// ── Floating mini-pip ────────────────────────────────────────────────────────
+
+interface FloatingPipProps {
+  chatName: string;
+  callStatus: VoiceCallStatus;
+  isMuted: boolean;
+  isSpeaking: boolean;
+  isRemoteSpeaking: boolean;
+  remoteName: string;
+  callDuration: number;
+  onExpand: () => void;
+  onToggleMute: () => void;
+  onHangUp: () => void;
+}
+
+function FloatingPip({
+  chatName,
+  callStatus,
+  isMuted,
+  isSpeaking,
+  isRemoteSpeaking,
+  remoteName,
+  callDuration,
+  onExpand,
+  onToggleMute,
+  onHangUp,
+}: FloatingPipProps) {
+  const pipRef = useRef<HTMLDivElement>(null);
+  const dragState = useRef<{ startX: number; startY: number; startLeft: number; startTop: number } | null>(null);
+  const [pos, setPos] = useState<{ x: number; y: number }>(() => {
+    // Default: bottom-right corner with 20px margin
+    if (typeof window === "undefined") return { x: 20, y: 20 };
+    return { x: window.innerWidth - 220, y: window.innerHeight - 120 };
+  });
+  const [dragging, setDragging] = useState(false);
+  const hasDragged = useRef(false);
+
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    hasDragged.current = false;
+    dragState.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startLeft: pos.x,
+      startTop: pos.y,
+    };
+    setDragging(true);
+  }, [pos]);
+
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!dragState.current) return;
+    const dx = e.clientX - dragState.current.startX;
+    const dy = e.clientY - dragState.current.startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) hasDragged.current = true;
+    const pip = pipRef.current;
+    const w = pip?.offsetWidth ?? 200;
+    const h = pip?.offsetHeight ?? 96;
+    const newX = Math.max(8, Math.min(window.innerWidth - w - 8, dragState.current.startLeft + dx));
+    const newY = Math.max(8, Math.min(window.innerHeight - h - 8, dragState.current.startTop + dy));
+    setPos({ x: newX, y: newY });
+  }, []);
+
+  const onPointerUp = useCallback(() => {
+    dragState.current = null;
+    setDragging(false);
+    if (!hasDragged.current) {
+      // Tap on pip body (not button) → expand
+    }
+  }, []);
+
+  const handlePipClick = useCallback(() => {
+    if (!hasDragged.current) onExpand();
+  }, [onExpand]);
+
+  const isConnected = callStatus === "connected";
+
+  // Determine speaking state for the active dot
+  const activeSpeaking = isConnected && (isSpeaking || isRemoteSpeaking) && !isMuted;
+
+  return (
+    <div
+      ref={pipRef}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onClick={handlePipClick}
+      className={`fixed z-50 select-none ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
+      style={{ left: pos.x, top: pos.y, touchAction: "none" }}
+    >
+      <div
+        className="flex items-center gap-3 px-3 py-2.5 rounded-2xl shadow-2xl border border-white/10"
+        style={{
+          background: "linear-gradient(135deg, #0d1117ee, #161b26ee)",
+          backdropFilter: "blur(20px)",
+          minWidth: 192,
+        }}
+      >
+        {/* Avatar with speaking indicator */}
+        <div className="relative shrink-0">
+          <div
+            className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold text-white transition-all duration-300 ${
+              isMuted
+                ? "ring-2 ring-red-500/80"
+                : activeSpeaking
+                ? "ring-2 ring-emerald-400/80"
+                : "ring-1 ring-white/20"
+            }`}
+            style={{ background: "linear-gradient(135deg, #d97706, #b45309)" }}
+          >
+            {getInitials(remoteName)}
+          </div>
+          {/* Pulse when speaking */}
+          {activeSpeaking && (
+            <div className="absolute inset-0 rounded-full animate-ping opacity-25 ring-2 ring-emerald-400" />
+          )}
+        </div>
+
+        {/* Info */}
+        <div className="flex-1 min-w-0" onClick={handlePipClick}>
+          <p className="text-white text-xs font-semibold truncate leading-tight">{chatName}</p>
+          <p className={`text-xs tabular-nums leading-tight mt-0.5 ${isConnected ? "text-emerald-400" : "text-amber-400"}`}>
+            {isConnected ? formatDuration(callDuration) : callStatus === "calling" ? "Calling…" : "Ringing…"}
+          </p>
+        </div>
+
+        {/* Controls */}
+        <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+          {/* Mute */}
+          <button
+            onClick={onToggleMute}
+            title={isMuted ? "Unmute" : "Mute"}
+            className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
+              isMuted ? "bg-red-500/80 hover:bg-red-500 text-white" : "bg-white/10 hover:bg-white/20 text-white"
+            }`}
+          >
+            {isMuted ? (
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 19L5 5M12 18.75a6 6 0 006-6v-1.5M6 13.5v-1.5a6 6 0 016-6m0 0V4.5a3 3 0 116 0v1.5" />
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+              </svg>
+            )}
+          </button>
+
+          {/* Hang up */}
+          <button
+            onClick={onHangUp}
+            title="Hang up"
+            className="w-7 h-7 rounded-full flex items-center justify-center bg-red-500 hover:bg-red-600 text-white transition-all shadow-md shadow-red-500/30"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 3.75L18 6m0 0l2.25 2.25M18 6l2.25-2.25M18 6l-2.25 2.25m1.5 13.5c-8.284 0-15-6.716-15-15V4.5A2.25 2.25 0 016.75 2.25h1.372c.516 0 .966.351 1.091.852l1.106 4.423c.11.44-.054.902-.417 1.173l-1.293.97a1.062 1.062 0 00-.38 1.21 12.035 12.035 0 007.143 7.143c.441.162.928-.004 1.21-.38l.97-1.293a1.125 1.125 0 011.173-.417l4.423 1.106c.5.125.852.575.852 1.091V19.5a2.25 2.25 0 01-2.25 2.25h-2.25z" />
+            </svg>
+          </button>
+
+          {/* Expand */}
+          <button
+            onClick={(e) => { e.stopPropagation(); onExpand(); }}
+            title="Expand"
+            className="w-7 h-7 rounded-full flex items-center justify-center bg-white/10 hover:bg-white/20 text-white transition-all"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main modal ───────────────────────────────────────────────────────────────
+
 export default function CallModal({
   chatName,
   callStatus,
   isMuted,
+  isSpeaking,
+  isRemoteSpeaking,
   caller,
   error,
   isIncomingCall,
@@ -129,6 +313,14 @@ export default function CallModal({
 }: CallModalProps) {
   const [callDuration, setCallDuration] = useState(0);
   const [answering, setAnswering] = useState(false);
+  const [minimized, setMinimized] = useState(false);
+
+  // Reset minimized when call ends or new incoming call arrives
+  useEffect(() => {
+    if (callStatus === "idle" || callStatus === "ended" || isIncomingCall) {
+      setMinimized(false);
+    }
+  }, [callStatus, isIncomingCall]);
 
   useEffect(() => {
     if (callStatus !== "connected") {
@@ -172,6 +364,24 @@ export default function CallModal({
     ? "Call ended"
     : "";
 
+  // Minimized pip — only shown during active/calling/ringing (not incoming or ended)
+  if (minimized && !isIncomingCall && !isEnded) {
+    return (
+      <FloatingPip
+        chatName={chatName}
+        callStatus={callStatus}
+        isMuted={isMuted}
+        isSpeaking={isSpeaking}
+        isRemoteSpeaking={isRemoteSpeaking}
+        remoteName={remoteName}
+        callDuration={callDuration}
+        onExpand={() => setMinimized(false)}
+        onToggleMute={onToggleMute}
+        onHangUp={onHangUp}
+      />
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col overflow-hidden" style={{ background: "linear-gradient(160deg, #0d1117 0%, #161b26 40%, #0d1117 100%)" }}>
       {/* Subtle noise texture overlay */}
@@ -192,22 +402,37 @@ export default function CallModal({
           <span className="text-white/80 text-sm font-medium">{chatName}</span>
         </div>
 
-        {/* Status pill */}
-        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${
-          isConnected
-            ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"
-            : isEnded
-            ? "bg-white/8 text-white/50 border border-white/10"
-            : "bg-amber-500/15 text-amber-400 border border-amber-500/20"
-        }`}>
-          <div className={`w-1.5 h-1.5 rounded-full ${
+        <div className="flex items-center gap-2">
+          {/* Status pill */}
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${
             isConnected
-              ? "bg-emerald-400"
+              ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"
               : isEnded
-              ? "bg-white/30"
-              : "bg-amber-400 animate-pulse"
-          }`} />
-          <span className="tabular-nums">{statusText}</span>
+              ? "bg-white/8 text-white/50 border border-white/10"
+              : "bg-amber-500/15 text-amber-400 border border-amber-500/20"
+          }`}>
+            <div className={`w-1.5 h-1.5 rounded-full ${
+              isConnected
+                ? "bg-emerald-400"
+                : isEnded
+                ? "bg-white/30"
+                : "bg-amber-400 animate-pulse"
+            }`} />
+            <span className="tabular-nums">{statusText}</span>
+          </div>
+
+          {/* Minimize button — only when not incoming / ended */}
+          {!isIncomingCall && !isEnded && (
+            <button
+              onClick={() => setMinimized(true)}
+              title="Minimize"
+              className="w-7 h-7 rounded-full flex items-center justify-center bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-all"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 9L3.75 3.75M3.75 3.75v4.5m0-4.5h4.5M15 9l5.25-5.25M20.25 3.75v4.5m0-4.5h-4.5M9 15l-5.25 5.25M3.75 20.25v-4.5m0 4.5h4.5M15 15l5.25 5.25M20.25 20.25v-4.5m0 4.5h-4.5" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 
@@ -244,7 +469,7 @@ export default function CallModal({
             <ParticipantAvatar
               initial={getInitials(currentUserName)}
               label="You"
-              speaking={isConnected && !isMuted}
+              speaking={isConnected && isSpeaking && !isMuted}
               muted={isMuted}
               color="linear-gradient(135deg, #2563eb, #1d4ed8)"
             />
@@ -272,7 +497,7 @@ export default function CallModal({
               <ParticipantAvatar
                 initial={getInitials(remoteName)}
                 label={remoteName}
-                speaking={isConnected}
+                speaking={isConnected && isRemoteSpeaking}
                 color="linear-gradient(135deg, #d97706, #b45309)"
               />
             )}

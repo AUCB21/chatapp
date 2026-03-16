@@ -13,10 +13,13 @@ import {
   isWebRTCSupported,
 } from "@/lib/webrtc";
 import { startRingtone, stopRingtone } from "@/lib/sounds";
+import { useProfileStore } from "@/store/profileStore";
 
 interface UseVoiceCallReturn {
   callStatus: VoiceCallStatus;
   isMuted: boolean;
+  isSpeaking: boolean;
+  isRemoteSpeaking: boolean;
   isIncomingCall: boolean;
   caller: CallerInfo | null;
   error: string | null;
@@ -33,6 +36,8 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
 
   const [callStatus, setCallStatus] = useState<VoiceCallStatus>("idle");
   const [isMuted, setIsMuted] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isRemoteSpeaking, setIsRemoteSpeaking] = useState(false);
   const [isIncomingCall, setIsIncomingCall] = useState(false);
   const [caller, setCaller] = useState<CallerInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +54,11 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
   const syncDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const endedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const localAnalyserRef = useRef<AnalyserNode | null>(null);
+  const remoteAnalyserRef = useRef<AnalyserNode | null>(null);
+  const speakingRafRef = useRef<number | null>(null);
 
   // Refs for values accessed inside signal handlers (avoids stale closures)
   const userIdRef = useRef(userId);
@@ -118,10 +128,23 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
       disconnectTimerRef.current = null;
     }
 
+    if (speakingRafRef.current) {
+      cancelAnimationFrame(speakingRafRef.current);
+      speakingRafRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    localAnalyserRef.current = null;
+    remoteAnalyserRef.current = null;
+
     setCallStatus("idle");
     setIsIncomingCall(false);
     setCaller(null);
     setIsMuted(false);
+    setIsSpeaking(false);
+    setIsRemoteSpeaking(false);
     setError(null);
     callIdRef.current = null;
     isHostRef.current = false;
@@ -146,6 +169,7 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
 
       const json = await res.json();
       const activeCall = json?.data?.activeCall ?? null;
+      const callerName = (json?.data?.activeCall?.callerName as string | null) ?? null;
       const participants = (json?.data?.participants ?? []) as Array<{
         userId: string;
         state: "joined" | "left";
@@ -179,7 +203,7 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
           }
         } else if (!meJoined) {
           setIsIncomingCall(true);
-          setCaller({ id: activeCall.createdByUserId, name: "Incoming call" });
+          setCaller({ id: activeCall.createdByUserId, name: callerName ?? "Unknown" });
           setCallStatus("ringing");
         }
       }
@@ -247,6 +271,7 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
         if (remoteAudioRef.current) {
           remoteAudioRef.current.srcObject = remoteStream;
         }
+        startAudioLevelPolling(localStreamRef.current, remoteStream);
       };
 
       pc.onconnectionstatechange = () => {
@@ -256,6 +281,7 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
             clearTimeout(disconnectTimerRef.current);
             disconnectTimerRef.current = null;
           }
+          startAudioLevelPolling(localStreamRef.current, remoteStreamRef.current);
           setCallStatus("connected");
         } else if (pc.connectionState === "failed") {
           setError("Connection lost");
@@ -274,7 +300,7 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
         }
       };
     },
-    [sendSignal, cleanupCall]
+    [sendSignal, cleanupCall, startAudioLevelPolling]
   );
 
   const flushIceCandidates = useCallback(async () => {
@@ -289,6 +315,50 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
         console.error("[Voice] Failed to add queued ICE candidate:", err);
       }
     }
+  }, []);
+
+  const startAudioLevelPolling = useCallback((localStream: MediaStream | null, remoteStream: MediaStream | null) => {
+    if (speakingRafRef.current) {
+      cancelAnimationFrame(speakingRafRef.current);
+      speakingRafRef.current = null;
+    }
+    if (!localStream && !remoteStream) return;
+
+    if (!audioContextRef.current || audioContextRef.current.state === "closed") {
+      audioContextRef.current = new AudioContext();
+    }
+    const ctx = audioContextRef.current;
+
+    const makeAnalyser = (stream: MediaStream): AnalyserNode => {
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.5;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      return analyser;
+    };
+
+    if (localStream) localAnalyserRef.current = makeAnalyser(localStream);
+    if (remoteStream) remoteAnalyserRef.current = makeAnalyser(remoteStream);
+
+    const data = new Uint8Array(256);
+    const RMS_THRESHOLD = 12;
+
+    const poll = () => {
+      speakingRafRef.current = requestAnimationFrame(poll);
+      const getRms = (analyser: AnalyserNode | null): number => {
+        if (!analyser) return 0;
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) {
+          const v = (data[i] - 128) / 128;
+          sum += v * v;
+        }
+        return Math.sqrt(sum / data.length) * 100;
+      };
+      setIsSpeaking(getRms(localAnalyserRef.current) > RMS_THRESHOLD);
+      setIsRemoteSpeaking(getRms(remoteAnalyserRef.current) > RMS_THRESHOLD);
+    };
+    poll();
   }, []);
 
   // --- Signal handlers ---
@@ -522,10 +592,11 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
+      const profileName = useProfileStore.getState().profile?.displayName;
       await sendSignal({
         type: "call-offer",
         from: userId,
-        fromName: userEmail?.split("@")[0] || "Unknown",
+        fromName: profileName || userEmail?.split("@")[0] || "Unknown",
         callId: activeCallId,
         offer: pc.localDescription!.toJSON(),
       });
@@ -607,5 +678,5 @@ export function useVoiceCall(chatId: string | null): UseVoiceCallReturn {
     });
   }, [chatId]);
 
-  return { callStatus, isMuted, isIncomingCall, caller, error, startCall, answerCall, rejectCall, hangUp, toggleMute };
+  return { callStatus, isMuted, isSpeaking, isRemoteSpeaking, isIncomingCall, caller, error, startCall, answerCall, rejectCall, hangUp, toggleMute };
 }

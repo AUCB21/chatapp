@@ -7,6 +7,7 @@ import {
   getActiveCallForChat,
   getCallParticipants,
 } from "@/db/queries/calls";
+import { getChatMembers } from "@/db/queries/memberships";
 import {
   badRequest,
   created,
@@ -36,8 +37,13 @@ export async function GET(_req: NextRequest, { params }: Params) {
     const activeCall = await getActiveCallForChat(chatId);
     if (!activeCall) return ok({ activeCall: null, participants: [] });
 
-    const participants = await getCallParticipants(activeCall.id);
-    return ok({ activeCall, participants });
+    const [participants, members] = await Promise.all([
+      getCallParticipants(activeCall.id),
+      getChatMembers(chatId),
+    ]);
+    const callerMember = members.find((m) => m.userId === activeCall.createdByUserId);
+    const callerName = callerMember?.displayName ?? null;
+    return ok({ activeCall: { ...activeCall, callerName }, participants });
   } catch (error) {
     return serverError("Failed to fetch active call", error);
   }

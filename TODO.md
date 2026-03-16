@@ -94,7 +94,8 @@
 
 ## 🔵 Pending — No migration needed
 
-1. **49. Call Flow Completion**
-   Finish WebRTC signaling, ringtone, multi-screen call UI. Full-screen call modal with avatar, controls bar (mic/video/screenshare/hangup), connection status badge. Screen sharing may need fixing.
+~~1. **49. Call Flow Completion** — Done: caller display name resolved from chat member profile (API enriched + signal `fromName` uses profile `displayName`); screen share `fromName` fixed; real-time audio level detection via Web Audio `AnalyserNode` → `isSpeaking`/`isRemoteSpeaking` wired to `CallModal`; green speaking ring shown only when voice detected, red ring + glow when muted.~~
+
+~~2. **68. Call Minimize / Floating PiP** — Minimize button collapses full-screen call modal to a small draggable floating pill (pointer-capture drag, clamped to viewport). Pip shows remote avatar, speaking indicator, call timer, mute toggle, hang-up, and expand button. Auto-expands on incoming call or call end.~~
 
 ~~2. **67. Frontend Refactor** — Done: chat list sorted by last message desc (self-chat pinned, `bumpChatToTop` on new messages); starred+blocked IDs loaded during boot preload and stored in `chatStore` (removed 2 redundant mount-time fetches); `activeChat` now reads from `selectActiveChat` store selector instead of `useMemo` over full chats array.~~

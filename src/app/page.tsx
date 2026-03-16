@@ -116,6 +116,8 @@ function ChatPage() {
   const {
     callStatus,
     isMuted,
+    isSpeaking,
+    isRemoteSpeaking,
     isIncomingCall,
     caller,
     error: callError,
@@ -1164,6 +1166,8 @@ function ChatPage() {
         chatName={(incomingCallChatId ? chats.find((c) => c.id === incomingCallChatId) : activeChat)?.name ?? activeChat?.name ?? ""}
         callStatus={callStatus}
         isMuted={isMuted}
+        isSpeaking={isSpeaking}
+        isRemoteSpeaking={isRemoteSpeaking}
         caller={caller}
         error={callError}
         isIncomingCall={isIncomingCall}

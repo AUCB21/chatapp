@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useSessionStore } from "@/store/sessionStore";
+import { useProfileStore } from "@/store/profileStore";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
   requestScreenShare,
@@ -307,10 +308,11 @@ export function useScreenShare(chatId: string | null): UseScreenShareReturn {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
+        const profileName = useProfileStore.getState().profile?.displayName;
         await sendSignal({
           type: "screen-offer",
           from: userId,
-          fromName: userEmail || "Anonymous",
+          fromName: profileName || userEmail || "Anonymous",
           offer,
         });
       } catch (err) {
