@@ -11,6 +11,7 @@ import {
   deleteMessage,
   hideMessageForUser,
   markRead,
+  markDelivered,
   getReactionsForChat,
 } from "@/db/queries/messages";
 import {
@@ -36,7 +37,9 @@ import {
   badRequest,
   notFound,
   serverError,
+  tooManyRequests,
 } from "@/lib/apiResponse";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 type Params = { params: Promise<{ chatId: string }> };
 
@@ -112,10 +115,11 @@ export async function GET(req: NextRequest, { params }: Params) {
     const attachmentMap = await getAttachmentsForMessages(messageIds);
     await enrichWithSignedUrls(attachmentMap);
 
-    // Mark messages as read in background (don't block response)
+    // Mark messages as delivered in background (don't block response)
+    // Client will call PUT to mark as read once the tab is visible.
     if (!before) {
-      markRead(chatId, user.id).catch((e) =>
-        console.error("[markRead]", e)
+      markDelivered(chatId, user.id).catch((e) =>
+        console.error("[markDelivered]", e)
       );
     }
 
@@ -140,6 +144,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     const role = await getUserRole(user.id, chatId);
     if (!role) return forbidden();
     if (role === "read") return forbidden("Write permission required");
+
+    // Rate limit: 60 messages/min per user (text)
+    const rlMsg = checkRateLimit(`msg:${user.id}`, 60, 60_000);
+    if (!rlMsg.allowed) return tooManyRequests(Math.ceil((rlMsg.resetAt - Date.now()) / 1000));
 
     const contentType = req.headers.get("content-type") ?? "";
     const isMultipart = contentType.includes("multipart/form-data");
@@ -172,6 +180,12 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
     if (files.length > MAX_FILES_PER_MESSAGE) {
       return badRequest(`Maximum ${MAX_FILES_PER_MESSAGE} files per message`);
+    }
+
+    // Rate limit uploads separately: 20/hr per user
+    if (files.length > 0) {
+      const rlUpload = checkRateLimit(`upload:${user.id}`, 20, 3_600_000);
+      if (!rlUpload.allowed) return tooManyRequests(Math.ceil((rlUpload.resetAt - Date.now()) / 1000));
     }
 
     // Validate files

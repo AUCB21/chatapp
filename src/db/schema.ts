@@ -54,6 +54,7 @@ export const userProfiles = pgTable("user_profiles", {
   accentBg: text("accent_bg"), // custom background color (hex)
   accentFont: text("accent_font"), // custom font color (hex)
   accentChat: text("accent_chat"), // custom chat bubble color (hex)
+  isAdmin: boolean("is_admin").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -104,6 +105,7 @@ export const messages = pgTable(
     userId: uuid("user_id").notNull(), // FK → auth.users(id), set in SQL
     content: text("content").notNull(),
     status: messageStatusEnum("status").notNull().default("sent"),
+    isPinned: boolean("is_pinned").notNull().default(false),
     parentId: uuid("parent_id"), // FK → messages(id), for threaded replies
     editedAt: timestamp("edited_at"),
     deletedAt: timestamp("deleted_at"), // soft delete
@@ -391,4 +393,5 @@ export type AuthUser = {
   id: string;
   email: string;
   created_at: string;
+  isAdmin?: boolean;
 };

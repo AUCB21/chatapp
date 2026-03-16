@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import * as Sentry from "@sentry/nextjs";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 import { useChat } from "@/hooks/useChat";
 import { usePresence } from "@/hooks/usePresence";
@@ -20,7 +22,6 @@ import CallModal from "@/components/CallModal";
 import BootScreen from "@/components/BootScreen";
 import SettingsView from "@/components/chat/SettingsView";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import ChatSidebar from "@/components/chat/ChatSidebar";
 import ChatHeader from "@/components/chat/ChatHeader";
@@ -75,6 +76,16 @@ function ChatPage() {
   const clearSession = useSessionStore((s) => s.clearSession);
   const isDnd = useProfileStore(selectIsDnd);
   const profileStatus = useProfileStore(selectProfileStatus);
+  const profile = useProfileStore((s) => s.profile);
+
+  // Set Sentry user context when authenticated
+  useEffect(() => {
+    if (user?.id) {
+      Sentry.setUser({ id: user.id, email: user.email });
+    } else {
+      Sentry.setUser(null);
+    }
+  }, [user?.id, user?.email]);
   // Accent colors are applied globally via CSS vars (AccentColorProvider)
   // No need to read them here — just use the CSS var classes below
 
@@ -95,6 +106,8 @@ function ChatPage() {
     deleteMessage,
     deleteChat,
     toggleReaction,
+    togglePin,
+    pinnedId,
     refreshChats,
     loadMoreMessages,
     joinChat,
@@ -135,6 +148,39 @@ function ChatPage() {
   const connectionStatus = useConnectionStatus();
   const { mutedChats, toggleMute: toggleChatMute } = useMutedChats();
 
+  // Force logout after sustained disconnect (session may be invalid)
+  const FORCE_LOGOUT_SECS = 30;
+  const [disconnectedSec, setDisconnectedSec] = useState<number | null>(null);
+  const disconnectedIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (connectionStatus === "disconnected") {
+      setDisconnectedSec(FORCE_LOGOUT_SECS);
+      disconnectedIntervalRef.current = setInterval(() => {
+        setDisconnectedSec((s) => (s !== null && s > 1 ? s - 1 : s));
+      }, 1000);
+    } else {
+      if (disconnectedIntervalRef.current) {
+        clearInterval(disconnectedIntervalRef.current);
+        disconnectedIntervalRef.current = null;
+      }
+      setDisconnectedSec(null);
+    }
+    return () => {
+      if (disconnectedIntervalRef.current) {
+        clearInterval(disconnectedIntervalRef.current);
+      }
+    };
+  }, [connectionStatus]);
+
+  useEffect(() => {
+    if (disconnectedSec === 1) {
+      handleLogout();
+    }
+  // handleLogout is stable (defined in component body, called via closure)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disconnectedSec]);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joiningChatId, setJoiningChatId] = useState<string | null>(null);
@@ -161,11 +207,11 @@ function ChatPage() {
   const [threadRootId, setThreadRootId] = useState<string | null>(null);
   const starredIds = useChatStore((s) => s.starredMessageIds);
   const blockedUserIds = useChatStore((s) => s.blockedUserIds);
-  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
-  const [starredPanelOpen, setStarredPanelOpen] = useState(false);
+const [starredPanelOpen, setStarredPanelOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
   const paginationScrollHeightRef = useRef<number | null>(null);
   const skipAutoScrollRef = useRef(false);
 
@@ -241,29 +287,25 @@ function ChatPage() {
     hasActiveChat: !!activeChatId,
   });
 
-  /* ── Pinned messages per active chat ── */
+  // Must be declared before the scroll effects that reference them
+  const displayMessages = useMemo(
+    () => messages.filter((m) => !blockedUserIds.has(m.userId)),
+    [messages, blockedUserIds]
+  );
 
-  useEffect(() => {
-    if (!activeChatId) { setPinnedIds(new Set()); return; }
-    fetch(`/api/chat/${activeChatId}/pinned`).then((r) => r.ok ? r.json() : null).then((j) => {
-      if (j?.data) setPinnedIds(new Set(j.data.map((p: { messageId: string }) => p.messageId)));
-    }).catch(() => {});
-  }, [activeChatId]);
+  const messageVirtualizer = useVirtualizer({
+    count: displayMessages.length,
+    getScrollElement: () => scrollViewportRef.current,
+    estimateSize: () => 80,
+    overscan: 10,
+  });
 
   /* ── Effects ── */
 
   useEffect(() => {
     if (paginationScrollHeightRef.current === null) return;
-
-    const container = messagesContainerRef.current;
-    if (!container) return;
-
-    const viewport = container.querySelector(
-      '[data-slot="scroll-area-viewport"]'
-    ) as HTMLElement;
-
+    const viewport = scrollViewportRef.current;
     if (!viewport) return;
-
     viewport.scrollTop += viewport.scrollHeight - paginationScrollHeightRef.current;
     paginationScrollHeightRef.current = null;
   }, [messages.length]);
@@ -273,15 +315,14 @@ function ChatPage() {
       skipAutoScrollRef.current = false;
       return;
     }
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [activeChatId, messages.length]);
+    if (displayMessages.length > 0) {
+      messageVirtualizer.scrollToIndex(displayMessages.length - 1, { behavior: "smooth" });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChatId, displayMessages.length]);
 
   useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
-    const viewport = container.querySelector(
-      '[data-slot="scroll-area-viewport"]'
-    ) as HTMLElement;
+    const viewport = scrollViewportRef.current;
     if (!viewport) return;
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = viewport;
@@ -463,16 +504,11 @@ function ChatPage() {
   }, [deleteMessage]);
 
   const handleLoadMore = useCallback(() => {
-    const container = messagesContainerRef.current;
-    const viewport = container?.querySelector(
-      '[data-slot="scroll-area-viewport"]'
-    ) as HTMLElement | null;
-
+    const viewport = scrollViewportRef.current;
     if (viewport) {
       paginationScrollHeightRef.current = viewport.scrollHeight;
       skipAutoScrollRef.current = true;
     }
-
     loadMoreMessages();
   }, [loadMoreMessages]);
 
@@ -536,18 +572,7 @@ function ChatPage() {
     }).catch(() => {});
   }, []);
 
-  const handleTogglePin = useCallback((msgId: string) => {
-    if (!activeChatId) return;
-    const isPinned = pinnedIds.has(msgId);
-    setPinnedIds((prev) => { const s = new Set(prev); isPinned ? s.delete(msgId) : s.add(msgId); return s; });
-    fetch(`/api/chat/${activeChatId}/pinned`, {
-      method: isPinned ? "DELETE" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messageId: msgId }),
-    }).catch(() => {});
-  }, [activeChatId, pinnedIds]);
-
-  const handleToggleBlock = useCallback((userId: string) => {
+const handleToggleBlock = useCallback((userId: string) => {
     const isBlocked = useChatStore.getState().blockedUserIds.has(userId);
     useChatStore.getState().toggleBlockedUser(userId);
     fetch("/api/block", {
@@ -558,24 +583,16 @@ function ChatPage() {
   }, []);
 
   const handleJumpToMessage = useCallback((messageId: string) => {
-    const target = document.querySelector(
-      `[data-message-id="${messageId}"]`
-    ) as HTMLElement | null;
-
-    if (!target) return;
-
-    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    const idx = displayMessages.findIndex((m) => m.id === messageId);
+    if (idx !== -1) {
+      messageVirtualizer.scrollToIndex(idx, { align: "center" });
+    }
     setHighlightedMessageId(messageId);
-
     window.setTimeout(() => {
       setHighlightedMessageId((prev) => (prev === messageId ? null : prev));
     }, 1500);
-  }, []);
-
-  const displayMessages = useMemo(
-    () => messages.filter((m) => !blockedUserIds.has(m.userId)),
-    [messages, blockedUserIds]
-  );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayMessages]);
 
   // The ID of the last own message that others have seen (for read receipt display)
   const lastReadOwnMsgId = useMemo(() => {
@@ -593,6 +610,16 @@ function ChatPage() {
     }
     return null;
   }, [displayMessages, readReceipts, user?.id]);
+
+  // userId → display name for reaction tooltips
+  const memberNames = useMemo(() => {
+    const map = new Map<string, string>();
+    if (user?.id) map.set(user.id, "You");
+    for (const r of readReceipts) {
+      if (!map.has(r.userId)) map.set(r.userId, r.displayName);
+    }
+    return map;
+  }, [user?.id, readReceipts, profile]);
 
   // Map msgId → readers for the lastReadOwnMsgId
   const seenByMap = useMemo(() => {
@@ -720,18 +747,33 @@ function ChatPage() {
                   : "bg-emerald-500/10 text-emerald-500 border-b border-emerald-500/20"
               }`}>
                 {connectionStatus === "disconnected"
-                  ? "Connection lost — messages may not be delivered"
+                  ? `Connection lost — signing out in ${disconnectedSec ?? FORCE_LOGOUT_SECS}s`
                   : "Back online"}
               </div>
             )}
 
             {/* Pinned messages banner */}
-            {pinnedIds.size > 0 && !isPending && (
-              <div className="shrink-0 px-3 py-1.5 border-b border-border bg-primary/5 flex items-center gap-2 text-xs">
-                <svg className="w-3.5 h-3.5 text-primary shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 3l1.5 5h5l-4 3 1.5 5L12 13 7 16l1.5-5-4-3h5z" />
-                </svg>
-                <span className="text-muted-foreground flex-1">{pinnedIds.size} pinned {pinnedIds.size === 1 ? "message" : "messages"}</span>
+            {pinnedId && !isPending && (
+              <div className="shrink-0 border-b border-border bg-primary/5 flex items-center text-xs">
+                <button
+                  onClick={() => handleJumpToMessage(pinnedId)}
+                  className="flex items-center gap-2 px-3 py-1.5 flex-1 hover:bg-primary/10 transition-colors text-left"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-primary shrink-0">
+                    <line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
+                  </svg>
+                  <span className="text-muted-foreground flex-1">1 pinned message</span>
+                  <span className="text-primary/60 text-[10px]">click to jump</span>
+                </button>
+                {activeChat?.role === "admin" && (
+                  <button
+                    onClick={() => togglePin(pinnedId)}
+                    className="px-2.5 py-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    title="Unpin message"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
             )}
 
@@ -837,58 +879,70 @@ function ChatPage() {
                   className="flex-1 overflow-hidden relative"
                   ref={messagesContainerRef}
                 >
-                  <ScrollArea className="h-full px-4 md:px-6 pt-4 md:pt-6 pb-2">
-                    <div className="flex flex-col gap-1">
-                      {/* Load more older messages */}
-                      {hasMoreMessages && !searchMode && (
-                        <div className="flex justify-center py-2">
-                          {isLoadingMore ? (
-                            <p className="text-xs text-muted-foreground">Loading…</p>
-                          ) : (
-                            <button
-                              onClick={handleLoadMore}
-                              className="text-xs text-primary hover:underline"
-                            >
-                              Load older messages
-                            </button>
-                          )}
-                        </div>
-                      )}
+                  <div
+                    ref={scrollViewportRef}
+                    className="h-full overflow-y-auto px-4 md:px-6 pt-4 md:pt-6 pb-2"
+                  >
+                    {/* Load more older messages */}
+                    {hasMoreMessages && !searchMode && (
+                      <div className="flex justify-center py-2">
+                        {isLoadingMore ? (
+                          <p className="text-xs text-muted-foreground">Loading…</p>
+                        ) : (
+                          <button
+                            onClick={handleLoadMore}
+                            className="text-xs text-primary hover:underline"
+                          >
+                            Load older messages
+                          </button>
+                        )}
+                      </div>
+                    )}
 
-                      {loading.messages && (
-                        <p className="text-xs text-muted-foreground text-center py-4">
-                          Loading messages…
-                        </p>
-                      )}
-                      {!loading.messages && messages.length === 0 && !searchMode && (
-                        <p className="text-xs text-muted-foreground text-center py-10">
-                          No messages yet. Say something!
-                        </p>
-                      )}
+                    {loading.messages && (
+                      <p className="text-xs text-muted-foreground text-center py-4">
+                        Loading messages…
+                      </p>
+                    )}
+                    {!loading.messages && messages.length === 0 && !searchMode && (
+                      <p className="text-xs text-muted-foreground text-center py-10">
+                        No messages yet. Say something!
+                      </p>
+                    )}
 
-                      {displayMessages.map((msg, i, list) => {
-                        const isOwn =
-                          msg.userId === user?.id ||
-                          msg.userId === "optimistic";
-                        const prevMsg = list[i - 1];
+                    {/* Virtual message list */}
+                    <div
+                      style={{ height: messageVirtualizer.getTotalSize(), position: "relative" }}
+                    >
+                      {messageVirtualizer.getVirtualItems().map((vItem) => {
+                        const msg = displayMessages[vItem.index];
+                        if (!msg) return null;
+                        const isOwn = msg.userId === user?.id || msg.userId === "optimistic";
+                        const prevMsg = vItem.index > 0 ? displayMessages[vItem.index - 1] : undefined;
                         const parentMsg = msg.parentId
-                          ? (messages.find((m) => m.id === msg.parentId) ??
-                            null)
+                          ? (messages.find((m) => m.id === msg.parentId) ?? null)
                           : null;
-
                         const msgDate = new Date(msg.createdAt);
                         const showDateSeparator =
-                          i === 0 ||
-                          isDifferentDay(
-                            msgDate,
-                            new Date(prevMsg.createdAt)
-                          );
+                          vItem.index === 0 ||
+                          isDifferentDay(msgDate, new Date(prevMsg!.createdAt));
 
                         return (
                           <div
-                            key={msg.id}
+                            key={vItem.key}
+                            data-index={vItem.index}
+                            ref={messageVirtualizer.measureElement}
                             data-message-id={msg.id}
-                            className="scroll-mt-24"
+                            style={{
+                              position: "absolute",
+                              top: 0,
+                              left: 0,
+                              width: "100%",
+                              transform: `translateY(${vItem.start}px)`,
+                              // Elevate stacking context when a popup is open for this item
+                              // (transform creates a new stacking context per item)
+                              zIndex: showEmojiPicker === msg.id || editingMessageId === msg.id ? 10 : 1,
+                            }}
                           >
                             {showDateSeparator && (
                               <div className="flex items-center gap-3 my-3">
@@ -908,39 +962,21 @@ function ChatPage() {
                               isHighlighted={highlightedMessageId === msg.id}
                               msgReactions={reactionGrouped[msg.id]}
                               attachments={chatAttachments?.[msg.id]}
-                              editContent={
-                                editingMessageId === msg.id
-                                  ? editContent
-                                  : null
-                              }
+                              editContent={editingMessageId === msg.id ? editContent : null}
                               isAnyEditing={!!editingMessageId}
                               isPickerOpen={showEmojiPicker === msg.id}
                               userId={user?.id || ""}
                               canWrite={canWrite}
-                              onContextMenu={(e) =>
-                                handleContextMenu(e, msg.id, isOwn)
-                              }
+                              onContextMenu={(e) => handleContextMenu(e, msg.id, isOwn)}
                               onEditContent={setEditContent}
                               onSaveEdit={handleSaveEdit}
                               onCancelEdit={() => setEditingMessageId(null)}
-                              onToggleReaction={(emoji) =>
-                                toggleReaction(msg.id, emoji)
-                              }
-                              onSetPickerOpen={(open) =>
-                                setShowEmojiPicker(open ? msg.id : null)
-                              }
-                              onReply={() =>
-                                handleReply(msg.id, msg.content)
-                              }
+                              onToggleReaction={(emoji) => toggleReaction(msg.id, emoji)}
+                              onSetPickerOpen={(open) => setShowEmojiPicker(open ? msg.id : null)}
+                              onReply={() => handleReply(msg.id, msg.content)}
                               onJumpToMessage={handleJumpToMessage}
-                              onRetry={
-                                msg.id.startsWith("failed-")
-                                  ? () => retrySend(msg.id)
-                                  : undefined
-                              }
-                              onEdit={() => {
-                                if (!msg.deletedAt) handleStartEdit(msg.id, msg.content);
-                              }}
+                              onRetry={msg.id.startsWith("failed-") ? () => retrySend(msg.id) : undefined}
+                              onEdit={() => { if (!msg.deletedAt) handleStartEdit(msg.id, msg.content); }}
                               onDeleteForMe={() => handleDelete(msg.id, "for_me")}
                               onDeleteForEveryone={() => handleDelete(msg.id, "for_everyone")}
                               seenBy={seenByMap[msg.id]}
@@ -950,36 +986,37 @@ function ChatPage() {
                               isStarred={starredIds.has(msg.id)}
                               onToggleStar={() => handleToggleStar(msg.id)}
                               isAdmin={activeChat?.role === "admin"}
-                              isPinned={pinnedIds.has(msg.id)}
-                              onTogglePin={() => handleTogglePin(msg.id)}
+                              isPinned={pinnedId === msg.id}
+                              onTogglePin={() => togglePin(msg.id)}
+                              memberNames={memberNames}
                             />
                           </div>
                         );
                       })}
-
-                      {/* Typing indicator */}
-                      {typingUsers.length > 0 && (
-                        <div className="flex items-center gap-2 mt-2">
-                          <div className="flex gap-0.5">
-                            {[0, 150, 300].map((delay) => (
-                              <span
-                                key={delay}
-                                className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce"
-                                style={{ animationDelay: `${delay}ms` }}
-                              />
-                            ))}
-                          </div>
-                          <span className="text-xs text-muted-foreground">
-                            {typingUsers.length === 1
-                              ? `${typingUsers[0].email.split("@")[0]} is typing…`
-                              : `${typingUsers.length} people typing…`}
-                          </span>
-                        </div>
-                      )}
-
-                      <div ref={messagesEndRef} />
                     </div>
-                  </ScrollArea>
+
+                    {/* Typing indicator */}
+                    {typingUsers.length > 0 && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <div className="flex gap-0.5">
+                          {[0, 150, 300].map((delay) => (
+                            <span
+                              key={delay}
+                              className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce"
+                              style={{ animationDelay: `${delay}ms` }}
+                            />
+                          ))}
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {typingUsers.length === 1
+                            ? `${typingUsers[0].email.split("@")[0]} is typing…`
+                            : `${typingUsers.length} people typing…`}
+                        </span>
+                      </div>
+                    )}
+
+                    <div ref={messagesEndRef} />
+                  </div>
 
                   {/* Context menu */}
                   {contextMenuMsgId && (
@@ -1031,11 +1068,11 @@ function ChatPage() {
                   {/* Scroll to bottom */}
                   {showScrollButton && (
                     <Button
-                      onClick={() =>
-                        messagesEndRef.current?.scrollIntoView({
-                          behavior: "smooth",
-                        })
-                      }
+                      onClick={() => {
+                        if (displayMessages.length > 0) {
+                          messageVirtualizer.scrollToIndex(displayMessages.length - 1, { behavior: "smooth" });
+                        }
+                      }}
                       size="icon"
                       className="absolute bottom-6 right-6 rounded-xl shadow-lg z-10"
                     >
@@ -1057,6 +1094,7 @@ function ChatPage() {
                 </div>
 
                 <MessageInput
+                  chatId={activeChatId ?? ""}
                   canWrite={canWrite}
                   replyTo={replyTo}
                   onSend={handleSend}

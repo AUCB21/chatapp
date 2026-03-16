@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, memo, useMemo, useState, useEffect, useCallback, type ReactNode } from "react";
-import { Pencil, Trash2, FileText, Download, Film, Music, MessageSquare, Code2, ChevronDown, ChevronUp } from "lucide-react";
+import { Pencil, Pin, Trash2, FileText, Download, Film, Music, MessageSquare, Code2, ChevronDown, ChevronUp } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { Message } from "@/db/schema";
@@ -62,6 +62,7 @@ const FENCED_CODE_REGEX = /```([\w+-]*)\n?([\s\S]*?)```/g;
 const INLINE_CODE_REGEX = /`([^`]+)`/g;
 const MARKDOWN_LINK_REGEX = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
 const RAW_URL_REGEX = /(https?:\/\/[^\s<]+[^\s<.,:;"')\]\}])/g;
+const MENTION_REGEX = /@\[([a-f0-9-]+):([^\]]+)\]/g;
 
 type MessageSegment =
   | { type: "text"; value: string }
@@ -148,6 +149,46 @@ function renderRawUrls(text: string, keyPrefix: string, linkClassName: string): 
   });
 }
 
+/** Renders @[userId:displayName] mention tokens as highlighted spans. */
+function renderWithMentions(
+  text: string,
+  keyPrefix: string,
+  linkClassName: string,
+  currentUserId?: string
+): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(MENTION_REGEX)) {
+    const idx = match.index ?? 0;
+    if (idx > lastIndex) {
+      nodes.push(...renderInlineFormatting(text.slice(lastIndex, idx), `${keyPrefix}-pre-${idx}`, linkClassName));
+    }
+    const mentionedId = match[1];
+    const displayName = match[2];
+    const isSelf = mentionedId === currentUserId;
+    nodes.push(
+      <span
+        key={`${keyPrefix}-mention-${idx}`}
+        className={`font-semibold rounded px-0.5 ${
+          isSelf
+            ? "text-orange-400 bg-orange-400/15"
+            : "text-primary"
+        }`}
+      >
+        @{displayName}
+      </span>
+    );
+    lastIndex = idx + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(...renderInlineFormatting(text.slice(lastIndex), `${keyPrefix}-tail`, linkClassName));
+  }
+
+  return nodes;
+}
+
 /** Process bold, italic, strikethrough in a plain-text string (no inline code). */
 function renderInlineFormatting(text: string, keyPrefix: string, linkClassName: string): ReactNode[] {
   // Combined regex: bold (**), strikethrough (~~), italic (* or _ but not mid-word _)
@@ -189,7 +230,7 @@ const BULLET_RE = /^[-*] (.+)$/;
 const ORDERED_RE = /^\d+\. (.+)$/;
 
 /** Render a text segment, splitting into list blocks and inline-formatted paragraphs. */
-function renderTextSegment(text: string, keyPrefix: string, isOwn: boolean): ReactNode[] {
+function renderTextSegment(text: string, keyPrefix: string, isOwn: boolean, currentUserId?: string): ReactNode[] {
   const linkClassName = isOwn
     ? "underline underline-offset-2 break-all text-primary-foreground/80 hover:text-primary-foreground"
     : "underline underline-offset-2 break-all text-primary hover:text-primary/80";
@@ -206,7 +247,7 @@ function renderTextSegment(text: string, keyPrefix: string, isOwn: boolean): Rea
         const content = lines[i].match(BULLET_RE)![1];
         items.push(
           <li key={`${keyPrefix}-bli-${i}`} className="text-sm">
-            {renderMarkdownText(content, `${keyPrefix}-bl-${i}`, isOwn)}
+            {renderMarkdownText(content, `${keyPrefix}-bl-${i}`, isOwn, currentUserId)}
           </li>
         );
         i++;
@@ -226,7 +267,7 @@ function renderTextSegment(text: string, keyPrefix: string, isOwn: boolean): Rea
         const content = lines[i].match(ORDERED_RE)![1];
         items.push(
           <li key={`${keyPrefix}-oli-${i}`} className="text-sm">
-            {renderMarkdownText(content, `${keyPrefix}-ol-${i}`, isOwn)}
+            {renderMarkdownText(content, `${keyPrefix}-ol-${i}`, isOwn, currentUserId)}
           </li>
         );
         i++;
@@ -250,7 +291,7 @@ function renderTextSegment(text: string, keyPrefix: string, isOwn: boolean): Rea
     if (joined) {
       result.push(
         <Fragment key={`${keyPrefix}-txt-${startI}`}>
-          {renderMarkdownText(joined, `${keyPrefix}-t-${startI}`, isOwn)}
+          {renderMarkdownText(joined, `${keyPrefix}-t-${startI}`, isOwn, currentUserId)}
         </Fragment>
       );
     } else {
@@ -262,7 +303,7 @@ function renderTextSegment(text: string, keyPrefix: string, isOwn: boolean): Rea
   return result;
 }
 
-function renderMarkdownText(text: string, keyPrefix: string, isOwn: boolean): ReactNode[] {
+function renderMarkdownText(text: string, keyPrefix: string, isOwn: boolean, currentUserId?: string): ReactNode[] {
   const linkClassName = isOwn
     ? "underline underline-offset-2 break-all text-primary-foreground/80 hover:text-primary-foreground"
     : "underline underline-offset-2 break-all text-primary hover:text-primary/80";
@@ -283,7 +324,7 @@ function renderMarkdownText(text: string, keyPrefix: string, isOwn: boolean): Re
       );
     }
 
-    return <Fragment key={key}>{renderInlineFormatting(part, key, linkClassName)}</Fragment>;
+    return <Fragment key={key}>{renderWithMentions(part, key, linkClassName, currentUserId)}</Fragment>;
   });
 }
 
@@ -340,6 +381,22 @@ function isCodeAttachment(mimeType: string, fileName: string): boolean {
   if (CODE_MIME_TYPES.has(mimeType)) return true;
   const ext = fileName.split(".").pop()?.toLowerCase();
   return !!ext && ext in EXT_TO_LANG;
+}
+
+/** Convert a Supabase Storage signed URL to a resized thumbnail URL.
+ *  /storage/v1/object/sign/ → /storage/v1/render/image/sign/ + width/quality params.
+ *  Falls back to the original URL if not a Supabase storage URL. */
+function toThumbnailUrl(url: string, width = 400, quality = 80): string {
+  try {
+    const u = new URL(url);
+    if (!u.pathname.includes("/storage/v1/object/sign/")) return url;
+    u.pathname = u.pathname.replace("/storage/v1/object/sign/", "/storage/v1/render/image/sign/");
+    u.searchParams.set("width", String(width));
+    u.searchParams.set("quality", String(quality));
+    return u.toString();
+  } catch {
+    return url;
+  }
 }
 
 const MAX_PREVIEW_LINES = 12;
@@ -427,7 +484,7 @@ function CodePreview({ src, fileName, isOwn }: { src: string; fileName: string; 
   );
 }
 
-function renderMarkdownMessage(content: string, isOwn: boolean) {
+function renderMarkdownMessage(content: string, isOwn: boolean, currentUserId?: string) {
   return splitMarkdownMessage(content).map((segment, index) => {
     if (segment.type === "code") {
       const highlighted = highlightCode(segment.value, segment.language);
@@ -452,7 +509,7 @@ function renderMarkdownMessage(content: string, isOwn: boolean) {
 
     return (
       <span key={`text-${index}`} className="whitespace-pre-wrap wrap-break-word">
-        {renderTextSegment(segment.value, `segment-${index}`, isOwn)}
+        {renderTextSegment(segment.value, `segment-${index}`, isOwn, currentUserId)}
       </span>
     );
   });
@@ -504,10 +561,15 @@ function AttachmentGrid({
               className="block rounded-lg overflow-hidden cursor-pointer text-left"
             >
               <img
-                src={att.signedUrl ?? ""}
+                src={toThumbnailUrl(att.signedUrl ?? "")}
                 alt={att.fileName}
                 loading="lazy"
                 className="w-full max-h-64 object-cover rounded-lg hover:opacity-90 transition-opacity"
+                onError={(e) => {
+                  const img = e.currentTarget;
+                  const original = att.signedUrl ?? "";
+                  if (img.src !== original) img.src = original;
+                }}
               />
             </button>
           ))}
@@ -630,6 +692,7 @@ interface MessageBubbleProps {
   isAdmin?: boolean;
   onTogglePin?: () => void;
   isPinned?: boolean;
+  memberNames?: Map<string, string>;
 }
 
 function MessageBubble({
@@ -667,6 +730,7 @@ function MessageBubble({
   isAdmin,
   onTogglePin,
   isPinned,
+  memberNames,
 }: MessageBubbleProps) {
   const [deletePickerOpen, setDeletePickerOpen] = useState(false);
   const [fullPickerOpen, setFullPickerOpen] = useState(false);
@@ -686,8 +750,8 @@ function MessageBubble({
   const isEdited = !!msg.editedAt && !isDeleted;
 
   const renderedContent = useMemo(
-    () => renderMarkdownMessage(msg.content, isOwn),
-    [msg.content, isOwn]
+    () => renderMarkdownMessage(msg.content, isOwn, userId),
+    [msg.content, isOwn, userId]
   );
 
   function handleDoubleClick() {
@@ -751,8 +815,14 @@ function MessageBubble({
                     isFailed ? "opacity-60" : isOptimistic ? "optimistic-pulse" : ""
                   }`
                 : "bg-card border border-border rounded-bl-sm shadow-sm"
-            } ${isDeleted ? "opacity-40 italic" : ""}`}
+            } ${isDeleted ? "opacity-40 italic" : ""} ${isPinned ? (isOwn ? "ring-1 ring-primary-foreground/30" : "ring-1 ring-primary/30") : ""}`}
           >
+            {isPinned && (
+              <div className={`flex items-center gap-1 mb-1 ${isOwn ? "text-primary-foreground/50" : "text-primary/50"}`}>
+                <Pin className="w-2.5 h-2.5" fill="currentColor" />
+                <span className="text-[0.6rem] font-medium uppercase tracking-wide">Pinned</span>
+              </div>
+            )}
             {/* Attachments */}
             {attachments && attachments.length > 0 && (
               <div className={msg.content ? "mb-1.5" : ""}>
@@ -863,9 +933,7 @@ function MessageBubble({
                     className={`w-7 h-7 rounded-lg transition-colors flex items-center justify-center ${isPinned ? "text-primary hover:bg-primary/10" : "text-muted-foreground hover:bg-muted"}`}
                     title={isPinned ? "Unpin" : "Pin"}
                   >
-                    <svg className="w-3.5 h-3.5" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="m 12 3 l 1.5 5 h 5 l -4 3 1.5 5 L 12 13 7 16 8.5 11 4.5 8 h 5 Z" />
-                    </svg>
+                    <Pin className="w-3.5 h-3.5" fill={isPinned ? "currentColor" : "none"} />
                   </button>
                 )}
 
@@ -970,19 +1038,26 @@ function MessageBubble({
           >
             {Object.entries(msgReactions).map(([emoji, data]) => {
               const isMine = data.users.includes(userId);
+              const reacterNames = data.users.map((uid) =>
+                memberNames?.get(uid) ?? (uid === userId ? "You" : "Member")
+              ).join(", ");
               return (
-                <button
-                  key={emoji}
-                  onClick={() => onToggleReaction(emoji)}
-                  className={`animate-reaction-pop inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-all active:scale-125 ${
-                    isMine
-                      ? "bg-primary/10 border-primary/25 text-primary"
-                      : "bg-muted/50 border-transparent hover:border-border/60 text-foreground"
-                  }`}
-                >
-                  <span>{emoji}</span>
-                  <span className="text-muted-foreground text-[0.6rem] font-medium">{data.count}</span>
-                </button>
+                <div key={emoji} className="relative group/reaction">
+                  <button
+                    onClick={() => onToggleReaction(emoji)}
+                    className={`animate-reaction-pop inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-all active:scale-125 ${
+                      isMine
+                        ? "bg-primary/10 border-primary/25 text-primary"
+                        : "bg-muted/50 border-transparent hover:border-border/60 text-foreground"
+                    }`}
+                  >
+                    <span>{emoji}</span>
+                    <span className="text-muted-foreground text-[0.6rem] font-medium">{data.count}</span>
+                  </button>
+                  <div className="pointer-events-none absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 z-30 hidden group-hover/reaction:block bg-popover border border-border rounded-lg px-2.5 py-1.5 shadow-lg text-[0.7rem] whitespace-nowrap max-w-56 truncate">
+                    {reacterNames}
+                  </div>
+                </div>
               );
             })}
           </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback, useRef, useState } from "react";
+import { useEffect, useCallback, useRef, useState, useMemo } from "react";
 import { useChatStore, selectActiveMessages, selectActiveReactions } from "@/store/chatStore";
 import type { ChatState } from "@/store/chatStore";
 import { supabase } from "@/lib/supabaseClient";
@@ -23,6 +23,7 @@ interface UseChatReturn {
   error: ChatState["error"];
   isLoadingMore: boolean;
   hasMoreMessages: boolean;
+  pinnedId: string | null;
 
   // Actions
   setActiveChat: (chatId: string | null) => void;
@@ -32,6 +33,7 @@ interface UseChatReturn {
   deleteMessage: (messageId: string, mode?: "for_me" | "for_everyone") => Promise<void>;
   deleteChat: (chatId: string, mode: "for_me" | "for_everyone") => Promise<void>;
   toggleReaction: (messageId: string, emoji: string) => Promise<void>;
+  togglePin: (messageId: string) => void;
   refreshChats: () => Promise<void>;
   loadMoreMessages: () => Promise<void>;
   joinChat: (chatId: string) => Promise<void>;
@@ -233,16 +235,53 @@ export function useChat(): UseChatReturn {
     };
   }, [isReady, userId]);
 
-  // --- Global background listener: badges + notifications + ping ---
-  // Watches ALL new messages across every chat the user belongs to.
-  // The memberships UPDATE subscription (below) carries the authoritative DB
-  // count and will override the client-side increment when it fires.
+  // Derived from the already-cached messages — no extra state, recomputes only
+  // when the active chat's message list changes (e.g. Realtime updateMessage).
+  const pinnedId = useMemo(
+    () => messages.find((m) => m.isPinned)?.id ?? null,
+    [messages]
+  );
+
+  // --- Toggle pin (single pin per chat, admin only) ---
+
+  const togglePin = useCallback((msgId: string) => {
+    if (!activeChatId) return;
+    const isPinned = pinnedId === msgId;
+    // Optimistic: mutate store directly — useMemo recomputes pinnedId automatically
+    if (!isPinned && pinnedId) updateMessage(activeChatId, pinnedId, { isPinned: false });
+    updateMessage(activeChatId, msgId, { isPinned: !isPinned });
+    const prevPinnedId = pinnedId;
+    fetch(`/api/chat/${activeChatId}/pinned`, {
+      method: isPinned ? "DELETE" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messageId: msgId }),
+    }).then((r) => {
+      if (r.ok) {
+        channelRef.current?.send({
+          type: "broadcast",
+          event: "pin-updated",
+          payload: { messageId: msgId, isPinned: !isPinned, prevPinnedId },
+        });
+      } else {
+        if (!isPinned && prevPinnedId) updateMessage(activeChatId, prevPinnedId, { isPinned: true });
+        updateMessage(activeChatId, msgId, { isPinned: isPinned });
+      }
+    }).catch(() => {
+      if (!isPinned && prevPinnedId) updateMessage(activeChatId, prevPinnedId, { isPinned: true });
+      updateMessage(activeChatId, msgId, { isPinned: isPinned });
+    });
+  }, [activeChatId, pinnedId, updateMessage]);
+
+  // --- Unified background listener: messages, memberships, invitations, deleted_for_me ---
+  // Merges the former "global-messages" and "chat-list-changes" channels into one
+  // to reduce Supabase Realtime connection count from 3 to 2.
 
   useEffect(() => {
     if (!isReady || !userId) return;
 
     const channel = supabase
-      .channel("global-messages")
+      .channel("app-events")
+      // New messages across all chats (badge + notification + active-chat append)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages" },
@@ -257,9 +296,8 @@ export function useChat(): UseChatReturn {
           const state = useChatStore.getState();
           const isActiveChat = state.activeChatId === chatId;
 
-          // Active chat: append message to the view as a fallback
-          // (the per-chat postgres_changes subscription may miss events
-          // when the messages SELECT RLS policy has sub-queries)
+          // Active chat: append message as fallback
+          // (per-chat channel may miss events when RLS has sub-queries)
           if (isActiveChat) {
             const incoming: Message = {
               id: raw.id as string,
@@ -271,6 +309,7 @@ export function useChat(): UseChatReturn {
               editedAt: raw.edited_at ? new Date(raw.edited_at as string) : null,
               deletedAt: raw.deleted_at ? new Date(raw.deleted_at as string) : null,
               createdAt: new Date(raw.created_at as string),
+              isPinned: false,
             };
             appendMessage(chatId, incoming);
 
@@ -280,28 +319,32 @@ export function useChat(): UseChatReturn {
             }
           }
 
-          // Client-side badge increment (DB trigger + memberships UPDATE
-          // will correct this to the authoritative count when it arrives)
+          // Client-side badge increment (memberships UPDATE will correct this)
           if (!isActiveChat) {
             state.incrementUnread(chatId);
           }
 
-          // Bump the chat to the top of the list
+          // Bump chat to top of list
           state.bumpChatToTop(chatId);
 
-          // Check mute status
+          // Check if current user is @mentioned — always notify regardless of mute
+          const isMentioned = content.includes(`@[${userId}:`);
+
+          // Check mute status (skip for mentions)
           const isMuted = (() => {
             try {
               const stored = localStorage.getItem("muted-chats");
               return stored ? (JSON.parse(stored) as string[]).includes(chatId) : false;
             } catch { return false; }
           })();
-          if (isMuted) return;
+          if (isMuted && !isMentioned) return;
 
           // Browser notification + ping
           if (document.visibilityState !== "visible") {
             const chat = state.chats.find((c) => c.id === chatId);
-            const title = chat?.displayName ?? "New message";
+            const title = isMentioned
+              ? `${chat?.displayName ?? "Chat"} mentioned you`
+              : (chat?.displayName ?? "New message");
             if (
               typeof Notification !== "undefined" &&
               Notification.permission === "granted"
@@ -319,22 +362,7 @@ export function useChat(): UseChatReturn {
           }
         }
       )
-      .subscribe();
-
-    return () => { channel.unsubscribe(); };
-  }, [isReady, userId]);
-
-  // --- Refresh chat list on relevant DB changes ---
-  // • chats:INSERT        — a new chat was created
-  // • memberships:INSERT  — an invitee accepted (creator's client updates)
-  // • invitations:INSERT  — you were invited (your client sees the pending chat)
-  // Requires Realtime to be enabled on all three tables in Supabase.
-
-  useEffect(() => {
-    if (!isReady || !userId) return;
-
-    const channel = supabase
-      .channel("chat-list-changes")
+      // Memberships INSERT — new chat / accepted invite
       .on(
         "postgres_changes",
         {
@@ -345,6 +373,7 @@ export function useChat(): UseChatReturn {
         },
         () => { refreshChats(); }
       )
+      // Memberships DELETE — removed from chat
       .on(
         "postgres_changes",
         {
@@ -355,6 +384,7 @@ export function useChat(): UseChatReturn {
         },
         () => { refreshChats(); }
       )
+      // Memberships UPDATE — unread count + sound/notification
       .on(
         "postgres_changes",
         {
@@ -370,13 +400,11 @@ export function useChat(): UseChatReturn {
           const state = useChatStore.getState();
           const isActiveChat = state.activeChatId === chatId;
 
-          // Skip everything for the active chat (user is looking at it)
           if (isActiveChat) return;
 
           const prevCount = state.unreadCounts[chatId] ?? 0;
           state.setUnreadCount(chatId, count);
 
-          // New messages arrived → sound + notification
           if (count > prevCount) {
             const isMuted = (() => {
               try {
@@ -398,6 +426,7 @@ export function useChat(): UseChatReturn {
           }
         }
       )
+      // deleted_for_me INSERT — remove message from active view
       .on(
         "postgres_changes",
         {
@@ -419,6 +448,7 @@ export function useChat(): UseChatReturn {
           }
         }
       )
+      // Invitations INSERT — you were invited
       .on(
         "postgres_changes",
         {
@@ -431,9 +461,7 @@ export function useChat(): UseChatReturn {
       )
       .subscribe();
 
-    return () => {
-      channel.unsubscribe();
-    };
+    return () => { channel.unsubscribe(); };
   }, [isReady, userId, userEmail, refreshChats]);
 
   // --- Fetch messages + subscribe to Realtime when active chat changes ---
@@ -484,6 +512,11 @@ export function useChat(): UseChatReturn {
             );
             setHasMore(activeId, false);
           }
+
+          // Mark as read immediately if user is actively viewing the chat
+          if (document.visibilityState === "visible") {
+            fetch(`/api/chat/${activeId}/messages`, { method: "PUT" }).catch(() => {});
+          }
         } catch (e) {
           setError("messages", e instanceof Error ? e.message : "Unknown error");
           return;
@@ -528,6 +561,7 @@ export function useChat(): UseChatReturn {
               content: raw.content as string,
               status: (raw.status as "sent" | "delivered" | "read") || "sent",
               parentId: (raw.parent_id as string) || null,
+              isPinned: false,
               editedAt: raw.edited_at ? new Date(raw.edited_at as string) : null,
               deletedAt: raw.deleted_at ? new Date(raw.deleted_at as string) : null,
               createdAt: new Date(raw.created_at as string),
@@ -554,6 +588,7 @@ export function useChat(): UseChatReturn {
             updateMessage(activeId, raw.id as string, {
               content: raw.content as string,
               status: (raw.status as "sent" | "delivered" | "read") || "sent",
+              isPinned: (raw.is_pinned as boolean) ?? false,
               editedAt: raw.edited_at ? new Date(raw.edited_at as string) : null,
               deletedAt: raw.deleted_at ? new Date(raw.deleted_at as string) : null,
             });
@@ -677,6 +712,16 @@ export function useChat(): UseChatReturn {
               .catch(() => {});
           }
         )
+        // Pin updates broadcast
+        .on("broadcast", { event: "pin-updated" }, (payload) => {
+          const { messageId, isPinned: newIsPinned, prevPinnedId } = payload.payload as {
+            messageId: string;
+            isPinned: boolean;
+            prevPinnedId: string | null;
+          };
+          if (prevPinnedId) updateMessage(activeId, prevPinnedId, { isPinned: false });
+          updateMessage(activeId, messageId, { isPinned: newIsPinned });
+        })
         .subscribe();
 
       channelRef.current = channel;
@@ -1161,6 +1206,7 @@ export function useChat(): UseChatReturn {
     error,
     isLoadingMore,
     hasMoreMessages: hasMore,
+    pinnedId,
     setActiveChat,
     sendMessage,
     retrySend,
@@ -1168,6 +1214,7 @@ export function useChat(): UseChatReturn {
     deleteMessage: deleteMessageFn,
     deleteChat: deleteChatFn,
     toggleReaction,
+    togglePin,
     refreshChats,
     loadMoreMessages,
     joinChat,

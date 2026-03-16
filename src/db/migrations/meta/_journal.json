@@ -141,6 +141,27 @@
       "when": 1774396800000,
       "tag": "0017_block_mute_starred_pinned_contacts_fts",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1742083200000,
+      "tag": "0018_add_is_pinned_to_messages",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1742169600000,
+      "tag": "0019_add_is_admin",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1773682669329,
+      "tag": "0022_catch_up_snapshot",
+      "breakpoints": true
     }
   ]
 }

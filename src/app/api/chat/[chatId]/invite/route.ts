@@ -5,7 +5,8 @@ import { getUserRole, addMember } from "@/db/queries/memberships";
 import { db } from "@/db";
 import { invitations } from "@/db/schema";
 import { randomBytes } from "crypto";
-import { ok, created, unauthorized, forbidden, badRequest, serverError } from "@/lib/apiResponse";
+import { ok, created, unauthorized, forbidden, badRequest, serverError, tooManyRequests } from "@/lib/apiResponse";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { z } from "zod";
 
 const inviteByEmailSchema = z.object({
@@ -30,6 +31,9 @@ export async function POST(req: NextRequest, { params }: Params) {
   try {
     const role = await getUserRole(user.id, chatId);
     if (role !== "admin") return forbidden("Admin permission required");
+
+    const rl = checkRateLimit(`invite:${user.id}`, 10, 3_600_000);
+    if (!rl.allowed) return tooManyRequests(Math.ceil((rl.resetAt - Date.now()) / 1000));
 
     const body = await req.json().catch(() => null);
     const parsed = inviteByEmailSchema.safeParse(body);

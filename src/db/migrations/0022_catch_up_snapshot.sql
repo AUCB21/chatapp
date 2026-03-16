@@ -1,0 +1,4 @@
+-- Snapshot catch-up: no SQL changes needed.
+-- This migration exists solely to advance the Drizzle snapshot baseline to idx 22
+-- so that future `drizzle-kit generate` runs diff against the correct schema state.
+-- All schema changes since idx 5 were applied by migrations 0006–0021.

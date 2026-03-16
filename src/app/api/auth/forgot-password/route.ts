@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { z } from "zod";
-import { ok, badRequest, serverError } from "@/lib/apiResponse";
+import { ok, badRequest, serverError, tooManyRequests } from "@/lib/apiResponse";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 const schema = z.object({
   email: z.string().email(),
@@ -16,6 +17,9 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error.issues[0].message);
+
+  const rl = checkRateLimit(`forgot-pw:${parsed.data.email.toLowerCase()}`, 3, 3_600_000);
+  if (!rl.allowed) return tooManyRequests(Math.ceil((rl.resetAt - Date.now()) / 1000));
 
   const supabase = await createSupabaseServer();
 

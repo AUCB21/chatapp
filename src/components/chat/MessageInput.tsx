@@ -1,10 +1,16 @@
 "use client";
 
-import { memo, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type DragEvent } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type DragEvent } from "react";
 import { Paperclip, Send, X, FileText, Film, Music } from "lucide-react";
 import { MAX_FILE_SIZE, MAX_FILES_PER_MESSAGE, ALLOWED_MIME_TYPES, CODE_FILE_EXTENSIONS } from "@/lib/validation";
 
+interface MemberOption {
+  id: string;
+  displayName: string;
+}
+
 interface MessageInputProps {
+  chatId: string;
   canWrite: boolean;
   replyTo: { id: string; content: string } | null;
   onSend: (content: string, files?: File[]) => Promise<void>;
@@ -26,6 +32,7 @@ function FileIcon({ mimeType }: { mimeType: string }) {
 }
 
 function MessageInput({
+  chatId,
   canWrite,
   replyTo,
   onSend,
@@ -33,16 +40,89 @@ function MessageInput({
   onJumpToReplyMessage,
   onCancelReply,
 }: MessageInputProps) {
-  const [input, setInput] = useState("");
+  const draftKey = `draft:${chatId}`;
+  const [input, setInput] = useState(() => {
+    try { return localStorage.getItem(draftKey) ?? ""; } catch { return ""; }
+  });
   const [files, setFiles] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // @mention state
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const mentionStartRef = useRef<number>(-1);
+  const [members, setMembers] = useState<MemberOption[]>([]);
+  const membersLoadedRef = useRef(false);
+
+  // Load draft when chatId changes; reset mention state + members cache
+  useEffect(() => {
+    try { setInput(localStorage.getItem(draftKey) ?? ""); } catch { setInput(""); }
+    setMentionQuery(null);
+    membersLoadedRef.current = false;
+    setMembers([]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatId]);
 
   useEffect(() => {
     return () => onTypingChange(false);
   }, [onTypingChange]);
+
+  async function loadMembers() {
+    if (membersLoadedRef.current) return;
+    membersLoadedRef.current = true;
+    try {
+      const res = await fetch(`/api/chat/${chatId}/members`);
+      if (!res.ok) return;
+      const { data } = await res.json();
+      setMembers(
+        (data.members ?? []).map((m: { userId: string; displayName: string }) => ({
+          id: m.userId,
+          displayName: m.displayName,
+        }))
+      );
+    } catch { /* ignore */ }
+  }
+
+  function detectMention(value: string, cursorPos: number) {
+    const textBefore = value.slice(0, cursorPos);
+    const atIdx = textBefore.lastIndexOf("@");
+    if (atIdx === -1) { setMentionQuery(null); return; }
+    const afterAt = textBefore.slice(atIdx + 1);
+    if (afterAt.includes(" ")) { setMentionQuery(null); return; }
+    mentionStartRef.current = atIdx;
+    setMentionQuery(afterAt);
+    loadMembers();
+  }
+
+  function handleMentionSelect(member: MemberOption) {
+    const token = `@[${member.id}:${member.displayName}]`;
+    const start = mentionStartRef.current;
+    const cursorPos = textareaRef.current?.selectionStart ?? input.length;
+    const newValue = input.slice(0, start) + token + " " + input.slice(cursorPos);
+    setInput(newValue);
+    setMentionQuery(null);
+    setTimeout(() => {
+      if (textareaRef.current) {
+        const newPos = start + token.length + 1;
+        textareaRef.current.setSelectionRange(newPos, newPos);
+        textareaRef.current.focus();
+      }
+    }, 0);
+  }
+
+  const filteredMembers = useMemo(
+    () =>
+      mentionQuery !== null
+        ? members
+            .filter((m) => m.displayName.toLowerCase().includes(mentionQuery.toLowerCase()))
+            .slice(0, 6)
+        : [],
+    [mentionQuery, members]
+  );
 
   function validateAndAddFiles(incoming: File[]) {
     setFileError(null);
@@ -88,7 +168,10 @@ function MessageInput({
     setInput("");
     setFiles([]);
     setFileError(null);
+    setMentionQuery(null);
     onTypingChange(false);
+    try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     if (filesToSend) setSending(true);
     try {
       await onSend(content, filesToSend);
@@ -103,9 +186,21 @@ function MessageInput({
   }
 
   function handleComposerKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Escape" && mentionQuery !== null) {
+      e.preventDefault();
+      setMentionQuery(null);
+      return;
+    }
     if (e.key !== "Enter") return;
     if (e.shiftKey) return;
     if (e.nativeEvent.isComposing) return;
+
+    // If mention dropdown is open, Enter selects the first option instead of sending
+    if (mentionQuery !== null && filteredMembers.length > 0) {
+      e.preventDefault();
+      handleMentionSelect(filteredMembers[0]);
+      return;
+    }
 
     e.preventDefault();
     if (!input.trim() && files.length === 0) return;
@@ -233,6 +328,25 @@ function MessageInput({
         </div>
       )}
 
+      {/* @mention autocomplete dropdown */}
+      {mentionQuery !== null && filteredMembers.length > 0 && (
+        <div className="mx-4 md:mx-5 mb-0 z-20 bg-popover border border-border rounded-xl shadow-lg overflow-hidden">
+          {filteredMembers.map((m, i) => (
+            <button
+              key={m.id}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); handleMentionSelect(m); }}
+              className={`flex items-center gap-2 px-3 py-2 text-sm w-full text-left transition-colors ${
+                i === 0 ? "bg-muted" : "hover:bg-muted"
+              }`}
+            >
+              <span className="text-primary font-medium">@</span>
+              <span>{m.displayName}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       <form
         onSubmit={handleSend}
         onDragOver={handleDragOver}
@@ -264,11 +378,21 @@ function MessageInput({
         </button>
 
         <textarea
+          ref={textareaRef}
           value={input}
           onChange={(e) => {
             const value = e.target.value;
             setInput(value);
             onTypingChange(value.trim().length > 0);
+            detectMention(value, e.target.selectionStart ?? value.length);
+            // Debounced draft save
+            if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+            draftTimerRef.current = setTimeout(() => {
+              try {
+                if (value) localStorage.setItem(draftKey, value);
+                else localStorage.removeItem(draftKey);
+              } catch { /* storage full */ }
+            }, 400);
           }}
           onKeyDown={handleComposerKeyDown}
           placeholder={replyTo ? "Write a reply…" : files.length > 0 ? "Add a caption…" : "Type a message…"}

@@ -72,10 +72,22 @@ function ChatSidebar({
   const profile = useProfileStore((s) => s.profile);
   const [menuChat, setMenuChat] = useState<ChatWithRole | null>(null);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const [draftedChats, setDraftedChats] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Re-read drafts whenever the active chat changes (the previous chat may have just saved one)
+  useEffect(() => {
+    const drafted = new Set<string>();
+    for (const chat of chats) {
+      try {
+        if (localStorage.getItem(`draft:${chat.id}`)) drafted.add(chat.id);
+      } catch { /* ignore */ }
+    }
+    setDraftedChats(drafted);
+  }, [chats, activeChatId]);
 
   const pendingChats = useMemo(
     () => chats.filter((c) => c.role === "pending"),
@@ -226,6 +238,7 @@ function ChatSidebar({
             const avatarColor = getAvatarColor(chat.displayName);
             const unread = unreadCounts[chat.id] ?? 0;
             const isMuted = mutedChats.has(chat.id);
+            const hasDraft = !isActive && draftedChats.has(chat.id);
 
             return (
               <div
@@ -257,8 +270,15 @@ function ChatSidebar({
                   }`}>
                     {chat.displayName}
                   </p>
-                  <p className="text-[0.65rem] mt-0.5 text-muted-foreground truncate">
-                    {chat.role === "declined" ? "Declined" : chat.role}
+                  <p className="text-[0.65rem] mt-0.5 truncate">
+                    {hasDraft ? (
+                      <span>
+                        <span className="text-amber-500 font-medium">Draft</span>
+                        <span className="text-muted-foreground"> · {chat.role === "declined" ? "Declined" : chat.role}</span>
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">{chat.role === "declined" ? "Declined" : chat.role}</span>
+                    )}
                   </p>
                 </div>
 

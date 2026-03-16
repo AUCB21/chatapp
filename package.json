@@ -11,8 +11,10 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@sentry/nextjs": "^10.43.0",
     "@supabase/ssr": "^0.5.1",
     "@supabase/supabase-js": "^2.45.4",
+    "@tanstack/react-virtual": "^3.13.23",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.36.0",

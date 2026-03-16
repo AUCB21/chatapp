@@ -8,7 +8,7 @@
 - **1. Invite Link Expiry Enforcement** — Shows "This link has expired" page and prevents join attempts past expiry date.
 - **3. Retry on Failed Optimistic Send** — Persisted in UI with "Failed — tap to retry" state and re-send action.
 - **4. Real Read Receipt Logic** — `markRead` called on initial message load; `read_receipts` table updated server-side.
-- **6. Reconnection Feedback** — Banner shows "Reconnecting…" / "Back online" via `useConnectionStatus`.
+- **6. Reconnection Feedback + Forced Logout** — Banner shows live countdown ("Connection lost — signing out in Xs"). If disconnected for 30s without recovery, `handleLogout()` fires: clears session, resets stores, redirects to `/login`. Reconnection cancels the timer.
 - **8. Forgot Password Handler** — Dedicated Forgot Password view calling Supabase reset method with confirmation and redirect.
 - **14. Header Back-To-Home Behavior** — Now clears `activeChatId` on all screen sizes.
 - **26. Invite Link Single-Use Enforcement** — Invite validation and accept flows now reject tokens whose status is not `pending`.
@@ -31,6 +31,7 @@
 - **39. Members Panel Pagination** — Cursor-based pagination (20/page) with "Load more" button. Backward-compatible.
 - **42. Add Members After Creation** — Admin-only invite-by-email in MembersPanel. Direct add or signup email sent.
 - **48. Thread View** — `ThreadPanel` Sheet shows reply chain. Thread indicator ("N replies") below messages. "View thread" in hover action bar.
+- **55. Pin Messages** — `is_pinned` boolean on `messages` table (migration `0018`). Single pin per chat enforced at DB level (unique partial index). Admin-only pin/unpin via hover bar. Clickable banner jumps to pinned message. X button unpins. "Pinned" label + ring on pinned bubble. Real-time replication via broadcast (`pin-updated` event on per-chat channel). `pinnedId` derived via `useMemo` from message store — no extra state or fetch.
 - **57. Group Settings Modal** — Clicking group name in ChatHeader opens Dialog with General tab (rename) and Members tab (opens members panel). Settings gear icon on hover.
 - **58. Bulk Member Import (CSV/TXT)** — "Import file" tab in MembersPanel invite area. Parses `.csv`/`.txt`, deduplicates, previews with per-email status, batch-sends via existing invite API.
 - **59. Login / Register UI Refresh** — Split-screen layout, SVG inline logo, gradient orb background, feature pills. Eye toggle on password fields. Forgot password moved below input.
@@ -45,6 +46,7 @@
 - **38. File Upload Progress Bar** — Per-file progress bar using `XMLHttpRequest` upload progress events.
 - **40. Image/Video Inline Preview** — `MediaLightbox` overlay for images, inline `<video>`/`<audio>` players. Close via X, backdrop, Escape.
 - **41. Markdown & Code Highlighting** — `**bold**`, `*italic*`, `~~strikethrough~~`, bullet/numbered lists, syntax-highlighted code blocks (highlight.js, 20 languages, `github-dark` theme). Code file attachments render inline preview with expand/collapse.
+- **80. Image Thumbnails** — `onError` fallback from Supabase image transform URL to original signed URL (transform requires Pro plan). Full resolution in lightbox.
 
 ### UI / UX Polish
 - **2. Mute / Unread State** — Per-chat mute (localStorage). Unread badges (DB + real-time). Document title counter.
@@ -59,13 +61,19 @@
 - **45. Block/Mute Users** — `blocked_users` table, `/api/block` GET/POST/DELETE, optimistic store state. Message filtering UI pending (#63).
 - **47. Full-Text Message Search** — `tsvector` generated column + GIN index on `messages`. `searchMessages` upgraded to `tsquery` with `:*` prefix matching, falls back to `ilike`.
 - **53. Contacts Master Data** — `contacts` table, `/api/contacts` CRUD, add-by-email support via admin API.
-- **54. Starred Messages** — `starred_messages` table, `/api/starred` GET/POST/DELETE, star button in message hover bar, StarredPanel Sheet. Panel access UI pending (#65).
-- **55. Pin Messages** — `pinned_messages` table, `/api/chat/[chatId]/pinned` GET/POST/DELETE, pin button in hover bar (admin only), pinned count banner in chat header.
+- **54. Starred Messages** — `starred_messages` table, `/api/starred` GET/POST/DELETE, star button in message hover bar, StarredPanel Sheet.
+- **65. Starred Messages panel access** — Star icon in ChatHeader toolbar opens StarredPanel Sheet.
 - **63 (emoji). Full emoji picker** — `EmojiPickerPopover` with 8 categories, search, 1000+ emojis. `+` button in quick reaction bar opens it.
 - **46. Keyboard Shortcuts** — `Ctrl/Cmd+K` toggles search, `Escape` exits search, `Alt+↑/↓` navigates chats.
 - **50. Performance: Memoization & Re-render Reduction** — `useMemo`, `useCallback`, `React.memo` on key components. `refreshChats` deduplication guard.
 - **51. Optimistic UI Across All Actions** — All selectors/buttons update visually immediately. API calls fire in background.
 - **52. Global CSS Accent Color System** — `AccentColorProvider` overrides CSS theme vars on `:root`. Live preview via Sheet overlay. Frosted glass surfaces.
+- **72. Message Delivery Status** — GET route calls `markDelivered`; client calls PUT (markRead) immediately after load if tab is visible, and on INSERT/visibility change. Ticks in `MessageBubble`: ✓ sent, ✓✓ grey delivered, ✓✓ colored read.
+- **79. Virtual List for Messages** — `@tanstack/react-virtual` `useVirtualizer` replaces `ScrollArea`. Absolute-positioned virtual items with `measureElement` for dynamic heights. Stacking context fix for emoji picker z-index.
+- **81. @Mentions** — `@` in `MessageInput` triggers lazy-loaded member autocomplete (cached per chat). Token format `@[userId:displayName]`. Rendered in `MessageBubble` as highlighted span (orange + bg for self, primary for others). Bypasses mute in notification handler.
+- **92. Reduce Realtime Channel Count** — Merged `global-messages` + `chat-list-changes` into single `app-events` channel. Reduced from 3 to 2 active Realtime channels. All listeners (messages INSERT, memberships INSERT/UPDATE/DELETE, deleted_for_me INSERT, invitations INSERT) consolidated.
+- **94. Draft Message Persistence** — Debounced `localStorage` draft per `chatId`. Restored on chat switch. Cleared on send. "Draft ·" preview indicator in sidebar for non-active chats.
+- **95. Reaction Summary Tooltip** — Hover reaction pill → popover listing reactor display names. `memberNames` map built from `readReceipts` data passed to `MessageBubble`.
 
 ### Settings & Auth
 - **28. User Menu & Profile Settings** — Profile editing, theme, accent colors, Discord-style presence, password reset, delete account.
@@ -75,6 +83,9 @@
 ### Security & Infrastructure
 - **11. Per-User Storage Hardening** (partial) — Private bucket, signed URLs, server-proxy uploads, MIME allowlist, size limits, storage cleanup. Remaining: per-user quotas, abuse scanning, audit logging.
 - **24. Restrict DB Role for Production** — `app_server` role with DML-only permissions. No SUPERUSER or BYPASSRLS.
+- **70. Security Headers** — CSP, HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy in `next.config.js` via `withSentryConfig`.
+- **84. Error Tracking (Sentry)** — `@sentry/nextjs` with `sentry.client/server/edge.config.ts`. User context set on login. Production-only. Deprecated options moved to `webpack.*` sub-object.
+- **115. Health Check Endpoint** — `GET /api/health` pings DB with `SELECT 1`, returns `{ status, db, latency_ms }` or 503. Added to `PUBLIC_ROUTES` in middleware.
 
 ---
 
@@ -87,7 +98,6 @@
 
 - **63. Block/Mute UI integration** — `blockedUserIds` filters messages in display list. Block/Unblock in MembersPanel dropdown for every non-self member. `onToggleBlock` wired from page.tsx.
 - **64. Contacts Page in Settings** — `ContactsPage` in SettingsView. Add by email, nickname/notes edit, remove. Uses `/api/contacts` CRUD.
-- **65. Starred Messages panel access** — Star icon button added to ChatHeader toolbar, opens StarredPanel Sheet.
 - **66. Full-Text Search UI upgrade** — Search bar fires debounced FTS API call (`?search=`), shows results panel with highlighted match terms, click jumps to message.
 
 ---
@@ -104,12 +114,11 @@
 
 ## 🔴 Pending — Blockers (must ship before v1)
 
-- **69. Rate Limiting** — Server-side rate limits on auth, messages, invites, and file uploads. Upstash Redis or Vercel edge middleware. (3/hr forgot-password, 60/min messages, 10/hr invites, 20/hr uploads)
-- **70. Security Headers** — CSP, HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy in `next.config.ts`. ~2–4 hours.
+- ~~**69. Rate Limiting**~~ — In-memory sliding window rate limiter applied to 4 endpoints: 3/hr forgot-password, 60/min messages, 20/hr uploads, 10/hr invites. Process-local (approximate under multi-instance); swap to Redis later if needed.
 - **71. ToS + Privacy Policy Consent** — Checkbox on signup. `consented_at` timestamp in `user_profiles`. Block API for non-consented users. (GDPR / CCPA)
-- **72. Message Delivery Status** — Single tick (sent), double tick grey (delivered), double tick colored (read) in `MessageBubble` on own messages. DB schema already supports it.
+- ~~**72. Message Delivery Status**~~ — GET route calls `markDelivered`; client calls PUT (markRead) immediately after load if tab is visible, and on INSERT/visibility change. Ticks in `MessageBubble`: ✓ sent, ✓✓ grey delivered, ✓✓ colored read.
 - **73. Email Notifications for Missed Messages** — Track last-seen per user. Resend / SendGrid trigger after 15 min inactivity with unread messages. Daily digest option. Unsubscribe link (CAN-SPAM).
-- **74. Admin Dashboard** — `/admin` route gated by `is_admin`. Pages: Users (manage/suspend/delete), Chats, Abuse Reports, Usage stats, Audit Log.
+- ~~**74. Admin Dashboard**~~ — `/admin` route gated by global `is_admin` flag on `user_profiles` (migration `0019`). Overview stats, Users table (delete), Chats table (delete). Promote admin via Supabase dashboard SQL: `UPDATE user_profiles SET is_admin = true WHERE user_id = '<uuid>';`
 - **75. Billing / Stripe** — Subscription plans (Free / Pro / Team), Stripe webhook at `/api/webhooks/stripe`, plan enforcement in API routes, billing portal in Settings.
 
 ---
@@ -119,12 +128,8 @@
 - **76. 2FA (TOTP)** — Supabase `enrollFactor` / `challengeAndVerify`. Setup in Settings > Security with recovery codes. Re-verify gate on password change and account deletion.
 - **77. Orphaned File Cleanup** — On message hard-delete or nightly cron, `supabase.storage.remove()` orphaned attachments. Also clean up on account deletion.
 - **78. Per-User Storage Quota** — `storage_used_bytes` in `user_profiles`. Increment/decrement on upload/delete. Reject uploads over plan limit. (Extends #11)
-- **79. Virtual List for Messages** — `@tanstack/react-virtual` replacing `ScrollArea` message list. Variable row heights + scroll anchoring.
-- **80. Image Thumbnails** — Supabase Storage Image Transformations (`?width=400&quality=80`) in message bubbles; full resolution only in lightbox.
-- **81. @Mentions** — `@` in `MessageInput` triggers member autocomplete. Stored as `@[userId:displayName]` token. Badge in `MessageBubble`. Bypasses mute; orange unread badge for mentions.
 - **82. Link Previews** — `GET /api/link-preview?url=` server-side OG scraper. `link_previews` cache table. Card rendered below message text.
 - **83. Web Push Notifications (FCM)** — Service worker + Web Push API. `push_subscriptions` table. Server-side trigger on new messages / calls. (Distinct from existing in-tab notifications #18.)
-- **84. Error Tracking (Sentry)** — `@sentry/nextjs`. Wrap API routes. User context on login. Slack/email alerts for new error types. ~4 hours.
 - **85. Analytics** — PostHog (self-hostable) or Plausible. Custom events: message sent, call started, file uploaded, search performed.
 - **86. Video Calls (1:1)** — Camera track alongside mic in `requestMicrophoneAccess`. `<video>` elements in `CallModal`. Camera toggle + PiP local preview.
 - **87. Group Calls (LiveKit SFU)** — Replace `useVoiceCall` P2P WebRTC with LiveKit SDK. N-participant calls, recording, simulcast. Architectural change.
@@ -137,10 +142,7 @@
 - **89. Audit Log** — `audit_logs(actor_id, action, target_type, target_id, metadata jsonb, created_at)`. Log role changes, member removes, chat deletes, admin actions. Read-only in admin dashboard.
 - **90. Session Management UI** — Settings > Security: list active sessions (device, IP, last seen). "Sign out all other sessions" via Supabase Auth API.
 - **91. PWA / Service Worker** — `next-pwa` or manual service worker. Cache app shell + static assets. Background sync for offline messages.
-- **92. Reduce Realtime Channel Count** — Consolidate 4–6 subscriptions per chat to 1 broadcast channel with a `type` field in the payload.
 - **93. highlight.js Bundle Optimization** — Verify unused languages are tree-shaken (`@next/bundle-analyzer`). Consider `lowlight` or dynamic import per code block.
-- **94. Draft Message Persistence** — Debounced `localStorage` draft per `chatId`. Restore on chat open. Clear on send. ~2 hours.
-- **95. Reaction Summary Tooltip** — Hover/click reaction group → popover listing reactor display names. Data already in `reactions` table. ~4 hours.
 - **96. Call History** — Calls tab in sidebar or chat: past calls with caller, duration, missed/answered. `GET /api/chat/[chatId]/calls?history=true`.
 - **97. Chat Folders / Organization** — User-created folders with drag-to-assign. `chat_folders` table. Collapsible in sidebar.
 - **98. Onboarding Flow** — First-login wizard: set name + avatar → invite first contact → feature tour. Track `onboarding_completed` in `user_profiles`.
@@ -165,7 +167,6 @@
 - **112. Improved Search UI** — Filters: date range, sender, chat, file type. Results grouped by chat. (Extends #66.)
 - **113. PgBouncer Connection Pooling** — Enable Supabase built-in PgBouncer. Update `DATABASE_URL` to pooler endpoint. Config-only, ~30 min.
 - **114. Bundle Analysis** — `@next/bundle-analyzer`. Run `ANALYZE=true next build` to surface heavy imports.
-- **115. Health Check Endpoint** — `GET /api/health` → DB connectivity → `{ status, db, latency_ms }`. ~1 hour.
 - **116. Deployment Documentation** — `README.md`: prerequisites, env var reference, local + Supabase setup, "Deploy to Vercel" button.
 
 ---

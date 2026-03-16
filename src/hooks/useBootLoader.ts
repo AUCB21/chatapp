@@ -66,6 +66,13 @@ export function useBootLoader(): BootState {
               createdAt: new Date(p.createdAt),
               updatedAt: new Date(p.updatedAt),
             });
+            // Propagate global admin flag to session user
+            if (p.isAdmin === true) {
+              const sessionUser = useSessionStore.getState().user;
+              if (sessionUser) {
+                useSessionStore.getState().setUser({ ...sessionUser, isAdmin: true });
+              }
+            }
           }
         }
       } catch {
