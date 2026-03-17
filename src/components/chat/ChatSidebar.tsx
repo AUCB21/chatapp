@@ -280,7 +280,7 @@ function ChatSidebar({
 
       {/* Section label */}
       {visibleChats.length > 0 && (
-        <div className="px-4 pt-3 pb-1">
+        <div className="px-4 pt-3 pb-1.5 border-b border-sidebar-border/40">
           <span className="text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">
             Conversations
           </span>
@@ -322,17 +322,16 @@ function ChatSidebar({
             const hasDraft = !isActive && draftedChats.has(chat.id);
             const lm = chat.lastMessage;
             const isOwnLastMsg = lm?.senderId === profile?.userId;
-            const lastMsgPrefix =
-              lm && chat.type === "group"
-                ? isOwnLastMsg
-                  ? "You: "
-                  : `${lm.senderName}: `
-                : "";
+            const lastMsgPrefix = lm
+              ? isOwnLastMsg
+                ? "You: "
+                : `${lm.senderName}: `
+              : "";
             const timeLabel = lm ? formatChatTime(lm.createdAt) : "";
 
             return (
+              <div key={chat.id} className={chat.isSelfChat ? "border-b border-sidebar-border/40 mb-1 pb-1" : undefined}>
               <div
-                key={chat.id}
                 onClick={() => onSelectChat(chat.id)}
                 className={`w-full text-left px-2.5 py-2.5 my-0.5 rounded-xl flex items-center gap-2.5 transition-all cursor-pointer group/item ${
                   isActive
@@ -412,6 +411,7 @@ function ChatSidebar({
                     <EllipsisVertical className="w-3.5 h-3.5" />
                   </button>
                 </div>
+              </div>
               </div>
             );
           })}
