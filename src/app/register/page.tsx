@@ -43,6 +43,7 @@ export default function RegisterPage() {
   const [confirm, setConfirm] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [consented, setConsented] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [pendingConfirmation, setPendingConfirmation] = useState(false);
@@ -62,7 +63,7 @@ export default function RegisterPage() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, consented }),
       });
 
       const json = await res.json();
@@ -266,6 +267,33 @@ export default function RegisterPage() {
               </div>
             </div>
 
+            <label className="flex items-start gap-3 cursor-pointer select-none group">
+              <div className="relative mt-0.5 shrink-0">
+                <input
+                  type="checkbox"
+                  checked={consented}
+                  onChange={(e) => setConsented(e.target.checked)}
+                  disabled={loading}
+                  className="sr-only"
+                />
+                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
+                  consented ? "bg-primary border-primary" : "border-border bg-muted/50 group-hover:border-primary/50"
+                }`}>
+                  {consented && (
+                    <svg className="w-2.5 h-2.5 text-primary-foreground" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                    </svg>
+                  )}
+                </div>
+              </div>
+              <span className="text-xs text-muted-foreground leading-relaxed">
+                I agree to the{" "}
+                <a href="/terms" target="_blank" className="text-primary hover:underline font-medium">Terms of Service</a>
+                {" "}and{" "}
+                <a href="/privacy" target="_blank" className="text-primary hover:underline font-medium">Privacy Policy</a>
+              </span>
+            </label>
+
             {error && (
               <div className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-xl px-3 py-2.5">
                 {error}
@@ -274,7 +302,7 @@ export default function RegisterPage() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !consented}
               className="w-full h-11 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-50 flex items-center justify-center gap-2 mt-1 relative overflow-hidden"
               style={{ background: "linear-gradient(135deg, #1E40AF 0%, #7C3AED 100%)" }}
             >

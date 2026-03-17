@@ -55,6 +55,7 @@ export const userProfiles = pgTable("user_profiles", {
   accentFont: text("accent_font"), // custom font color (hex)
   accentChat: text("accent_chat"), // custom chat bubble color (hex)
   isAdmin: boolean("is_admin").notNull().default(false),
+  consentedAt: timestamp("consented_at"), // ToS + Privacy Policy consent timestamp
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

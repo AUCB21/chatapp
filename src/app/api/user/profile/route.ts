@@ -13,7 +13,10 @@ export async function GET() {
   if (!user) return unauthorized();
 
   try {
-    const profile = await getOrCreateProfile(user.id, user.email ?? "");
+    const consentedAt = user.user_metadata?.consented_at
+      ? new Date(user.user_metadata.consented_at as string)
+      : undefined;
+    const profile = await getOrCreateProfile(user.id, user.email ?? "", consentedAt);
     return ok({ profile });
   } catch (error) {
     return serverError("Failed to fetch profile", error);

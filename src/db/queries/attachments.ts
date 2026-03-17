@@ -1,6 +1,6 @@
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../index";
-import { attachments } from "../schema";
+import { attachments, messages } from "../schema";
 
 /**
  * Insert one or more attachment rows for a message.
@@ -58,6 +58,18 @@ export async function getAttachment(attachmentId: string) {
     .where(eq(attachments.id, attachmentId))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * Fetch all storage paths for attachments belonging to messages sent by a user.
+ * Used during account deletion to clean up Supabase Storage.
+ */
+export async function getAttachmentsByUserId(userId: string) {
+  return db
+    .select({ storagePath: attachments.storagePath })
+    .from(attachments)
+    .innerJoin(messages, eq(messages.id, attachments.messageId))
+    .where(eq(messages.userId, userId));
 }
 
 /**

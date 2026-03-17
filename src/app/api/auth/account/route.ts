@@ -13,6 +13,9 @@ import {
 } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { unauthorized, ok, serverError } from "@/lib/apiResponse";
+import { getAttachmentsByUserId } from "@/db/queries/attachments";
+
+const BUCKET = "chat-attachments";
 
 /**
  * DELETE /api/auth/account
@@ -34,6 +37,18 @@ export async function DELETE(_req: NextRequest) {
   const userId = user.id;
 
   try {
+    // 0. Delete uploaded files from storage before anonymizing messages
+    const adminClient = createAdminClient();
+    if (adminClient) {
+      const userAttachments = await getAttachmentsByUserId(userId);
+      if (userAttachments.length > 0) {
+        const paths = userAttachments.map((a) => a.storagePath);
+        for (let i = 0; i < paths.length; i += 100) {
+          await adminClient.storage.from(BUCKET).remove(paths.slice(i, i + 100));
+        }
+      }
+    }
+
     // 1. Bulk-insert deleted_for_me for all messages this user sent
     await db.execute(sql`
       INSERT INTO deleted_for_me (user_id, message_id)
@@ -63,7 +78,6 @@ export async function DELETE(_req: NextRequest) {
     await db.delete(userProfiles).where(eq(userProfiles.userId, userId));
 
     // 4. Delete Supabase auth user
-    const adminClient = createAdminClient();
     if (adminClient) {
       await adminClient.auth.admin.deleteUser(userId);
     } else {

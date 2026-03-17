@@ -9,7 +9,8 @@ import { getOrCreateSelfChat } from "./chats";
  */
 export async function getOrCreateProfile(
   userId: string,
-  email: string
+  email: string,
+  consentedAt?: Date
 ): Promise<UserProfile> {
   const existing = await db
     .select()
@@ -27,6 +28,7 @@ export async function getOrCreateProfile(
       userId,
       username,
       displayName: username,
+      ...(consentedAt ? { consentedAt } : {}),
     })
     .onConflictDoNothing()
     .returning();
