@@ -157,6 +157,51 @@ export async function updateChatName(chatId: string, name: string) {
 }
 
 /**
+ * For a list of chat IDs, returns a map of chatId → last non-deleted message metadata.
+ * Uses DISTINCT ON (chat_id) so Postgres returns one row per chat efficiently via the index.
+ * Sender display name prefers per-chat override > global profile > "User".
+ */
+export async function getLastMessages(
+  chatIds: string[]
+): Promise<Record<string, { content: string; senderId: string; senderName: string; createdAt: Date }>> {
+  if (chatIds.length === 0) return {};
+
+  const rows = await db.execute<{
+    chatId: string;
+    content: string;
+    senderId: string;
+    createdAt: string;
+    senderName: string;
+  }>(sql`
+    SELECT DISTINCT ON (m.chat_id)
+      m.chat_id                                               AS "chatId",
+      m.content                                               AS "content",
+      m.user_id                                               AS "senderId",
+      m.created_at                                            AS "createdAt",
+      COALESCE(cup.display_name, up.display_name, 'User')    AS "senderName"
+    FROM messages m
+    LEFT JOIN chat_user_profiles cup
+      ON cup.chat_id = m.chat_id AND cup.user_id = m.user_id
+    LEFT JOIN user_profiles up
+      ON up.user_id = m.user_id
+    WHERE m.chat_id = ANY(ARRAY[${sql.join(chatIds.map((id) => sql`${id}::uuid`), sql`, `)}])
+      AND m.deleted_at IS NULL
+    ORDER BY m.chat_id, m.created_at DESC
+  `);
+
+  const result: Record<string, { content: string; senderId: string; senderName: string; createdAt: Date }> = {};
+  for (const row of rows) {
+    result[row.chatId] = {
+      content: row.content,
+      senderId: row.senderId,
+      senderName: row.senderName,
+      createdAt: new Date(row.createdAt),
+    };
+  }
+  return result;
+}
+
+/**
  * Hard-deletes a chat. Cascade removes memberships, messages, reactions, etc.
  */
 export async function deleteChat(chatId: string) {

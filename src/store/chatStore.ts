@@ -5,7 +5,8 @@ import type { Chat, Message, MemberRole, Reaction, Attachment } from "../db/sche
 // --- Types ---
 
 export type ChatRole = MemberRole | "pending" | "declined";
-export type ChatWithRole = Chat & { role: ChatRole; displayName: string; isSelfChat?: boolean };
+export type LastMessagePreview = { content: string; senderId: string; senderName: string; createdAt: Date };
+export type ChatWithRole = Chat & { role: ChatRole; displayName: string; isSelfChat?: boolean; lastMessage?: LastMessagePreview | null };
 
 /** Grouped reactions for a message: emoji → { count, users[] } */
 export type ReactionGroup = Record<string, { count: number; users: string[] }>;
@@ -45,6 +46,7 @@ export interface ChatState {
   setBooted: (value: boolean) => void;
   setChats: (chats: ChatWithRole[]) => void;
   updateChat: (chatId: string, updates: Partial<Pick<ChatWithRole, "name" | "displayName">>) => void;
+  updateChatLastMessage: (chatId: string, lastMessage: LastMessagePreview) => void;
   setActiveChat: (chatId: string | null) => void;
   setMessages: (chatId: string, messages: Message[]) => void;
   prependMessages: (chatId: string, messages: Message[]) => void;
@@ -145,6 +147,17 @@ export const useChatStore = create<ChatState>()(
           }),
           false,
           "updateChat"
+        ),
+
+      updateChatLastMessage: (chatId, lastMessage) =>
+        set(
+          (state) => ({
+            chats: state.chats.map((c) =>
+              c.id === chatId ? { ...c, lastMessage } : c
+            ),
+          }),
+          false,
+          "updateChatLastMessage"
         ),
 
       setActiveChat: (chatId) =>

@@ -74,6 +74,7 @@
 - **92. Reduce Realtime Channel Count** — Merged `global-messages` + `chat-list-changes` into single `app-events` channel. Reduced from 3 to 2 active Realtime channels. All listeners (messages INSERT, memberships INSERT/UPDATE/DELETE, deleted_for_me INSERT, invitations INSERT) consolidated.
 - **94. Draft Message Persistence** — Debounced `localStorage` draft per `chatId`. Restored on chat switch. Cleared on send. "Draft ·" preview indicator in sidebar for non-active chats.
 - **95. Reaction Summary Tooltip** — Hover reaction pill → popover listing reactor display names. `memberNames` map built from `readReceipts` data passed to `MessageBubble`.
+- **116. Chat List Preview** — WhatsApp-style sidebar: last message preview (with `You:`/`SenderName:` prefix for groups), relative timestamp (`12:04`/`Yesterday`/`Mon`/date), filter tabs (All / Unread N / Groups N). `getLastMessages` uses `DISTINCT ON` SQL for efficiency. Real-time updates via `updateChatLastMessage` store action. Perf fixes: global channel only updates background chats, broadcast skips own-message double-update, `visibleChats` memo conditionally depends on `unreadCounts`, draft effect no longer re-reads localStorage on every message.
 
 ### Settings & Auth
 - **28. User Menu & Profile Settings** — Profile editing, theme, accent colors, Discord-style presence, password reset, delete account.

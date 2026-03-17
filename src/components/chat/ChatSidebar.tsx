@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bell, BellOff, Bookmark, EllipsisVertical, LogOut, Moon, Plus, Search, Settings, Sun } from "lucide-react";
+import { Bell, BellOff, Bookmark, EllipsisVertical, LogOut, Moon, Plus, Search, Settings, Sun, Users } from "lucide-react";
 import { useProfileStore } from "@/store/profileStore";
 import type { ChatWithRole } from "@/store/chatStore";
 import type { UserStatus } from "@/db/schema";
@@ -32,6 +32,21 @@ interface ChatSidebarProps {
   onDeleteChat: (chatId: string, mode: "for_me" | "for_everyone") => void;
   mutedChats: Set<string>;
   onToggleMute: (chatId: string) => void;
+}
+
+function formatChatTime(date: Date | string): string {
+  const d = new Date(date);
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterdayStart = new Date(todayStart.getTime() - 86400000);
+  const weekStart = new Date(todayStart.getTime() - 6 * 86400000);
+
+  if (d >= todayStart) {
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  }
+  if (d >= yesterdayStart) return "Yesterday";
+  if (d >= weekStart) return d.toLocaleDateString([], { weekday: "short" });
+  return d.toLocaleDateString([], { day: "2-digit", month: "2-digit", year: "2-digit" });
 }
 
 function getAvatarColor(name: string) {
@@ -73,12 +88,15 @@ function ChatSidebar({
   const [menuChat, setMenuChat] = useState<ChatWithRole | null>(null);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [draftedChats, setDraftedChats] = useState<Set<string>>(new Set());
+  const [activeFilter, setActiveFilter] = useState<"all" | "unread" | "groups">("all");
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Re-read drafts whenever the active chat changes (the previous chat may have just saved one)
+  // Re-read drafts when the active chat changes (the previous chat may have just saved one).
+  // Intentionally omits `chats` — drafts are only created/cleared on chat switch, not on
+  // chat list mutations (e.g. new message bumping lastMessage).
   useEffect(() => {
     const drafted = new Set<string>();
     for (const chat of chats) {
@@ -87,19 +105,37 @@ function ChatSidebar({
       } catch { /* ignore */ }
     }
     setDraftedChats(drafted);
-  }, [chats, activeChatId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChatId]);
 
   const pendingChats = useMemo(
     () => chats.filter((c) => c.role === "pending"),
     [chats]
   );
 
+  const nonPendingChats = useMemo(
+    () => chats.filter((c) => c.role !== "pending"),
+    [chats]
+  );
+
+  const unreadCount = useMemo(
+    () => nonPendingChats.filter((c) => (unreadCounts[c.id] ?? 0) > 0).length,
+    [nonPendingChats, unreadCounts]
+  );
+  const groupCount = useMemo(
+    () => nonPendingChats.filter((c) => c.type === "group").length,
+    [nonPendingChats]
+  );
+
   const visibleChats = useMemo(() => {
-    const nonPending = chats.filter((c) => c.role !== "pending");
-    if (!search.trim()) return nonPending;
+    let filtered = nonPendingChats;
+    if (activeFilter === "unread") filtered = filtered.filter((c) => (unreadCounts[c.id] ?? 0) > 0);
+    else if (activeFilter === "groups") filtered = filtered.filter((c) => c.type === "group");
+    if (!search.trim()) return filtered;
     const term = search.trim().toLowerCase();
-    return nonPending.filter((chat) => chat.displayName.toLowerCase().includes(term));
-  }, [chats, search]);
+    return filtered.filter((chat) => chat.displayName.toLowerCase().includes(term));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nonPendingChats, search, activeFilter, activeFilter === "unread" ? unreadCounts : undefined]);
 
   const displayName = profile?.displayName ?? userEmail?.split("@")[0] ?? "User";
   const userStatus: UserStatus = profile?.status ?? "online";
@@ -147,6 +183,51 @@ function ChatSidebar({
             className="w-full rounded-lg bg-sidebar-accent/60 border border-sidebar-border/50 py-2 pl-8.5 pr-3 text-xs outline-none focus:ring-1 focus:ring-ring/40 transition-all placeholder:text-muted-foreground/60"
           />
         </div>
+      </div>
+
+      {/* Filter tabs */}
+      <div className="px-3 pb-2 flex items-center gap-1.5">
+        <button
+          onClick={() => setActiveFilter("all")}
+          className={`h-6 px-2.5 rounded-full text-[0.65rem] font-medium transition-colors ${
+            activeFilter === "all"
+              ? "bg-primary text-primary-foreground"
+              : "bg-sidebar-accent/60 text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          All
+        </button>
+        {unreadCount > 0 && (
+          <button
+            onClick={() => setActiveFilter("unread")}
+            className={`h-6 px-2.5 rounded-full text-[0.65rem] font-medium transition-colors flex items-center gap-1 ${
+              activeFilter === "unread"
+                ? "bg-primary text-primary-foreground"
+                : "bg-sidebar-accent/60 text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Unread
+            <span className={`min-w-4 h-4 px-1 rounded-full text-[0.55rem] flex items-center justify-center tabular-nums ${
+              activeFilter === "unread" ? "bg-primary-foreground/20 text-primary-foreground" : "bg-primary text-primary-foreground"
+            }`}>{unreadCount}</span>
+          </button>
+        )}
+        {groupCount > 0 && (
+          <button
+            onClick={() => setActiveFilter("groups")}
+            className={`h-6 px-2.5 rounded-full text-[0.65rem] font-medium transition-colors flex items-center gap-1 ${
+              activeFilter === "groups"
+                ? "bg-primary text-primary-foreground"
+                : "bg-sidebar-accent/60 text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Users className="w-2.5 h-2.5" />
+            Groups
+            <span className={`min-w-4 h-4 px-1 rounded-full text-[0.55rem] flex items-center justify-center tabular-nums ${
+              activeFilter === "groups" ? "bg-primary-foreground/20 text-primary-foreground" : "bg-sidebar-accent text-muted-foreground"
+            }`}>{groupCount}</span>
+          </button>
+        )}
       </div>
 
       {/* Pending invitations */}
@@ -239,6 +320,15 @@ function ChatSidebar({
             const unread = unreadCounts[chat.id] ?? 0;
             const isMuted = mutedChats.has(chat.id);
             const hasDraft = !isActive && draftedChats.has(chat.id);
+            const lm = chat.lastMessage;
+            const isOwnLastMsg = lm?.senderId === profile?.userId;
+            const lastMsgPrefix =
+              lm && chat.type === "group"
+                ? isOwnLastMsg
+                  ? "You: "
+                  : `${lm.senderName}: `
+                : "";
+            const timeLabel = lm ? formatChatTime(lm.createdAt) : "";
 
             return (
               <div
@@ -265,16 +355,30 @@ function ChatSidebar({
                 </Avatar>
 
                 <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-medium truncate leading-tight ${
-                    isActive ? "text-primary" : unread > 0 ? "text-foreground" : ""
-                  }`}>
-                    {chat.displayName}
-                  </p>
+                  <div className="flex items-baseline justify-between gap-1">
+                    <p className={`text-sm font-medium truncate leading-tight ${
+                      isActive ? "text-primary" : unread > 0 ? "text-foreground" : ""
+                    }`}>
+                      {chat.displayName}
+                    </p>
+                    {timeLabel && (
+                      <span className={`shrink-0 text-[0.6rem] tabular-nums group-hover/item:hidden ${
+                        unread > 0 && !isMuted ? "text-primary font-semibold" : "text-muted-foreground"
+                      }`}>
+                        {timeLabel}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[0.65rem] mt-0.5 truncate">
                     {hasDraft ? (
                       <span>
                         <span className="text-amber-500 font-medium">Draft</span>
-                        <span className="text-muted-foreground"> · {chat.role === "declined" ? "Declined" : chat.role}</span>
+                        <span className="text-muted-foreground"> · </span>
+                      </span>
+                    ) : lm ? (
+                      <span className="text-muted-foreground">
+                        {lastMsgPrefix && <span className="font-medium text-foreground/60">{lastMsgPrefix}</span>}
+                        {lm.content}
                       </span>
                     ) : (
                       <span className="text-muted-foreground">{chat.role === "declined" ? "Declined" : chat.role}</span>

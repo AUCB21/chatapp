@@ -2,7 +2,7 @@
 
 import { useEffect, useCallback, useRef, useState, useMemo } from "react";
 import { useChatStore, selectActiveMessages, selectActiveReactions } from "@/store/chatStore";
-import type { ChatState } from "@/store/chatStore";
+import type { ChatState, LastMessagePreview } from "@/store/chatStore";
 import { supabase } from "@/lib/supabaseClient";
 import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import { useSessionStore } from "@/store/sessionStore";
@@ -146,6 +146,7 @@ export function useChat(): UseChatReturn {
     setHasMore,
     setUnreadCounts,
     setReadReceipts,
+    updateChatLastMessage,
   } = useChatStore();
 
   const messages = useChatStore(selectActiveMessages);
@@ -319,9 +320,18 @@ export function useChat(): UseChatReturn {
             }
           }
 
-          // Client-side badge increment (memberships UPDATE will correct this)
+          // Client-side badge increment + last message preview for background chats
+          // (active chat is handled by the per-chat channel — no double update needed)
           if (!isActiveChat) {
             state.incrementUnread(chatId);
+            const receipts = state.readReceipts[chatId] ?? [];
+            const senderName = receipts.find((r) => r.userId === fromUserId)?.displayName ?? "";
+            updateChatLastMessage(chatId, {
+              content,
+              senderId: fromUserId,
+              senderName,
+              createdAt: new Date(raw.created_at as string),
+            });
           }
 
           // Bump chat to top of list
@@ -568,6 +578,21 @@ export function useChat(): UseChatReturn {
             };
             appendMessage(activeId, incoming);
 
+            // Update last message preview
+            {
+              const state = useChatStore.getState();
+              const receipts = state.readReceipts[activeId] ?? [];
+              const senderName = incoming.userId === userId
+                ? "You"
+                : receipts.find((r) => r.userId === incoming.userId)?.displayName ?? "";
+              updateChatLastMessage(activeId, {
+                content: incoming.content,
+                senderId: incoming.userId,
+                senderName,
+                createdAt: incoming.createdAt,
+              });
+            }
+
             // Mark as read if the message is from another user and tab is visible
             if (incoming.userId !== userId && document.visibilityState === "visible") {
               fetch(`/api/chat/${activeId}/messages`, { method: "PUT" }).catch(() => {});
@@ -638,12 +663,22 @@ export function useChat(): UseChatReturn {
           (payload) => {
             const msg = payload.payload as Message & { attachments?: unknown[] };
             const { attachments: msgAttachments, ...rest } = msg;
-            appendMessage(activeId, {
-              ...rest,
-              createdAt: new Date(rest.createdAt),
-            });
+            const normalizedMsg = { ...rest, createdAt: new Date(rest.createdAt) };
+            appendMessage(activeId, normalizedMsg);
             if (msgAttachments?.length) {
               useChatStore.getState().addAttachments(activeId, rest.id, msgAttachments as import("@/store/chatStore").AttachmentWithUrl[]);
+            }
+            // Update last message preview — skip own messages (already updated optimistically)
+            if (normalizedMsg.userId !== userId) {
+              const state = useChatStore.getState();
+              const receipts = state.readReceipts[activeId] ?? [];
+              const senderName = receipts.find((r) => r.userId === normalizedMsg.userId)?.displayName ?? "";
+              updateChatLastMessage(activeId, {
+                content: normalizedMsg.content,
+                senderId: normalizedMsg.userId,
+                senderName,
+                createdAt: normalizedMsg.createdAt,
+              });
             }
           }
         )
@@ -804,6 +839,12 @@ export function useChat(): UseChatReturn {
 
       appendMessage(activeChatId, optimisticMsg);
       useChatStore.getState().bumpChatToTop(activeChatId);
+      updateChatLastMessage(activeChatId, {
+        content: content.trim(),
+        senderId: userId ?? "me",
+        senderName: "You",
+        createdAt: new Date(),
+      });
 
       try {
         let res: Response;

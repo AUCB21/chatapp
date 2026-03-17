@@ -4,6 +4,7 @@ import {
   getAccessibleChats,
   createChat,
   getDirectChatPartnerNames,
+  getLastMessages,
 } from "@/db/queries/chats";
 import { getPendingInvitationsForEmail } from "@/db/queries/invitations";
 import { createChatSchema } from "@/lib/validation";
@@ -25,6 +26,9 @@ export async function GET() {
       getAccessibleChats(user.id),
       getPendingInvitationsForEmail(user.email ?? ""),
     ]);
+
+    const chatIds = memberChats.map((c) => c.id);
+    const lastMessages = chatIds.length > 0 ? await getLastMessages(chatIds) : {};
 
     // Unread counts from membership column
     const unreadCounts: Record<string, number> = {};
@@ -55,6 +59,7 @@ export async function GET() {
             ? "Saved Messages"
             : (directNames[c.id] ?? "Direct Message")
           : (c.name ?? "Group Chat"),
+      lastMessage: lastMessages[c.id] ?? null,
     }));
 
     // Sort: self-chat first, then by createdAt
