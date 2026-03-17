@@ -831,6 +831,7 @@ export function useChat(): UseChatReturn {
         userId: "optimistic",
         content: content.trim(),
         status: "sent",
+        isPinned: false,
         parentId: parentId || null,
         editedAt: null,
         deletedAt: null,
