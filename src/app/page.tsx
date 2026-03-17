@@ -724,6 +724,7 @@ const handleToggleBlock = useCallback((userId: string) => {
               onStartSharing={startSharing}
               onStopSharing={stopSharing}
               isAdmin={activeChat.role === "admin"}
+              currentUserId={user?.id ?? ""}
               onBack={() => setActiveChat(null)}
               onToggleSearch={() => setSearchMode((m) => !m)}
               onToggleMembers={() => setMembersOpen(true)}

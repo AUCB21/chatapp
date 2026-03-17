@@ -10,9 +10,10 @@ import { checkRateLimit } from "@/lib/rateLimit";
 import { z } from "zod";
 
 const inviteByEmailSchema = z.object({
-  email: z.string().email(),
+  email: z.string().email().optional(),
+  userId: z.string().uuid().optional(),
   role: z.enum(["read", "write", "admin"]).default("write"),
-});
+}).refine((d) => d.email || d.userId, { message: "email or userId required" });
 
 type Params = { params: Promise<{ chatId: string }> };
 
@@ -39,8 +40,16 @@ export async function POST(req: NextRequest, { params }: Params) {
     const parsed = inviteByEmailSchema.safeParse(body);
     if (!parsed.success) return badRequest(parsed.error.issues[0].message);
 
-    const { email, role: memberRole } = parsed.data;
-    const normalizedEmail = email.toLowerCase().trim();
+    const { email, userId: directUserId, role: memberRole } = parsed.data;
+
+    // Fast path: invite by userId (known app user, e.g. from contacts list)
+    if (directUserId) {
+      if (directUserId === user.id) return badRequest("You are already in this chat");
+      await addMember(directUserId, chatId, memberRole);
+      return created({ added: true, userId: directUserId, invited: false });
+    }
+
+    const normalizedEmail = email!.toLowerCase().trim();
 
     if (normalizedEmail === user.email?.toLowerCase()) {
       return badRequest("You are already in this chat");

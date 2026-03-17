@@ -75,6 +75,7 @@
 - **94. Draft Message Persistence** — Debounced `localStorage` draft per `chatId`. Restored on chat switch. Cleared on send. "Draft ·" preview indicator in sidebar for non-active chats.
 - **95. Reaction Summary Tooltip** — Hover reaction pill → popover listing reactor display names. `memberNames` map built from `readReceipts` data passed to `MessageBubble`.
 - **116. Chat List Preview** — WhatsApp-style sidebar: last message preview (with `You:`/`SenderName:` prefix for groups), relative timestamp (`12:04`/`Yesterday`/`Mon`/date), filter tabs (All / Unread N / Groups N). `getLastMessages` uses `DISTINCT ON` SQL for efficiency. Real-time updates via `updateChatLastMessage` store action. Perf fixes: global channel only updates background chats, broadcast skips own-message double-update, `visibleChats` memo conditionally depends on `unreadCounts`, draft effect no longer re-reads localStorage on every message.
+- **117. Discord-style Group Management UI** — `GroupSettingsSheet` replaces small dialog: left-nav tabs (Overview / Members / Invites / Permissions). Overview: editable name (delegates to parent's `onRenameChat` — no double-fetch), topic placeholder. Members: full paginated list with role badges, nickname edit, admin actions (role change / remove / block). Invites (admin only): pending email invitations with copy-link. Permissions: static capability table. `InviteModal`: contacts tab (invite by userId — fast path, no email lookup) + email/bulk-import tab + copy-link footer. New API routes: `GET /api/chat/[chatId]/invitations` (pending invites), `GET /api/chat/[chatId]/invite-candidates` (contacts not yet in group). Invite route extended with `userId` fast-path. Invite (UserPlus) button added to `ChatHeader` toolbar for group admins.
 
 ### Settings & Auth
 - **28. User Menu & Profile Settings** — Profile editing, theme, accent colors, Discord-style presence, password reset, delete account.
@@ -116,7 +117,7 @@
 ## 🔴 Pending — Blockers (must ship before v1)
 
 - ~~**69. Rate Limiting**~~ — In-memory sliding window rate limiter applied to 4 endpoints: 3/hr forgot-password, 60/min messages, 20/hr uploads, 10/hr invites. Process-local (approximate under multi-instance); swap to Redis later if needed.
-- **71. ToS + Privacy Policy Consent** — Checkbox on signup. `consented_at` timestamp in `user_profiles`. Block API for non-consented users. (GDPR / CCPA)
+- ~~**71. ToS + Privacy Policy Consent**~~ — Consent checkbox on register form (disabled submit until checked). `consented: true` validated server-side (Zod). `consented_at` ISO timestamp stored in Supabase user metadata on `signUp`, then persisted to `user_profiles.consented_at` (nullable `timestamptz`) on first profile creation via `getOrCreateProfile`. Migration `0023_add_consented_at.sql` registered in journal.
 - ~~**72. Message Delivery Status**~~ — GET route calls `markDelivered`; client calls PUT (markRead) immediately after load if tab is visible, and on INSERT/visibility change. Ticks in `MessageBubble`: ✓ sent, ✓✓ grey delivered, ✓✓ colored read.
 - **73. Email Notifications for Missed Messages** — Track last-seen per user. Resend / SendGrid trigger after 15 min inactivity with unread messages. Daily digest option. Unsubscribe link (CAN-SPAM).
 - ~~**74. Admin Dashboard**~~ — `/admin` route gated by global `is_admin` flag on `user_profiles` (migration `0019`). Overview stats, Users table (delete), Chats table (delete). Promote admin via Supabase dashboard SQL: `UPDATE user_profiles SET is_admin = true WHERE user_id = '<uuid>';`
@@ -127,7 +128,7 @@
 ## 🟠 Pending — High Priority
 
 - **76. 2FA (TOTP)** — Supabase `enrollFactor` / `challengeAndVerify`. Setup in Settings > Security with recovery codes. Re-verify gate on password change and account deletion.
-- **77. Orphaned File Cleanup** — On message hard-delete or nightly cron, `supabase.storage.remove()` orphaned attachments. Also clean up on account deletion.
+- ~~**77. Orphaned File Cleanup**~~ — `getAttachmentsByUserId` query added to `attachments.ts` (joins attachments → messages). Account DELETE route now fetches all user attachment paths and removes them from `chat-attachments` storage bucket in batches of 100 before anonymizing messages.
 - **78. Per-User Storage Quota** — `storage_used_bytes` in `user_profiles`. Increment/decrement on upload/delete. Reject uploads over plan limit. (Extends #11)
 - **82. Link Previews** — `GET /api/link-preview?url=` server-side OG scraper. `link_previews` cache table. Card rendered below message text.
 - **83. Web Push Notifications (FCM)** — Service worker + Web Push API. `push_subscriptions` table. Server-side trigger on new messages / calls. (Distinct from existing in-tab notifications #18.)
