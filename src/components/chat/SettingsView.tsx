@@ -649,12 +649,14 @@ function StatusDot({ status }: { status: UserStatus }) {
 }
 
 interface Contact {
-  id: string;
-  contactUserId: string;
+  contactId: string;
   nickname: string | null;
   notes: string | null;
-  email: string;
   displayName: string | null;
+  username: string | null;
+  avatarUrl: string | null;
+  status: string | null;
+  createdAt: string;
 }
 
 function ContactsPage({ onBack }: { onBack: () => void }) {
@@ -689,9 +691,13 @@ function ContactsPage({ onBack }: { onBack: () => void }) {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) { setAddError(json.error ?? "Failed"); setAddStatus("error"); return; }
-      setContacts((prev) => [json.data, ...prev]);
       setAddEmail("");
       setAddStatus("idle");
+      // Refetch to get full contact with display name
+      fetch("/api/contacts")
+        .then((r) => r.ok ? r.json() : null)
+        .then((j) => { if (j?.data) setContacts(j.data); })
+        .catch(() => {});
     } catch {
       setAddError("Network error");
       setAddStatus("error");
@@ -699,7 +705,7 @@ function ContactsPage({ onBack }: { onBack: () => void }) {
   }
 
   function startEdit(contact: Contact) {
-    setEditingId(contact.id);
+    setEditingId(contact.contactId);
     setEditNickname(contact.nickname ?? "");
     setEditNotes(contact.notes ?? "");
   }
@@ -707,7 +713,7 @@ function ContactsPage({ onBack }: { onBack: () => void }) {
   async function handleSaveEdit(contactId: string) {
     const nickname = editNickname.trim() || null;
     const notes = editNotes.trim() || null;
-    setContacts((prev) => prev.map((c) => c.id === contactId ? { ...c, nickname, notes } : c));
+    setContacts((prev) => prev.map((c) => c.contactId === contactId ? { ...c, nickname, notes } : c));
     setEditingId(null);
     fetch("/api/contacts", {
       method: "PATCH",
@@ -717,7 +723,7 @@ function ContactsPage({ onBack }: { onBack: () => void }) {
   }
 
   function handleRemove(contactId: string) {
-    setContacts((prev) => prev.filter((c) => c.id !== contactId));
+    setContacts((prev) => prev.filter((c) => c.contactId !== contactId));
     fetch("/api/contacts", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
@@ -774,10 +780,10 @@ function ContactsPage({ onBack }: { onBack: () => void }) {
         ) : (
           <ul className="py-1 divide-y divide-sidebar-border/30">
             {contacts.map((contact) => {
-              const name = contact.nickname ?? contact.displayName ?? contact.email.split("@")[0];
-              const isEditing = editingId === contact.id;
+              const name = contact.nickname ?? contact.displayName ?? contact.username ?? contact.contactId;
+              const isEditing = editingId === contact.contactId;
               return (
-                <li key={contact.id} className="px-4 py-3 group">
+                <li key={contact.contactId} className="px-4 py-3 group">
                   {isEditing ? (
                     <div className="flex flex-col gap-2">
                       <input
@@ -802,7 +808,7 @@ function ContactsPage({ onBack }: { onBack: () => void }) {
                           Cancel
                         </button>
                         <button
-                          onClick={() => handleSaveEdit(contact.id)}
+                          onClick={() => handleSaveEdit(contact.contactId)}
                           className="text-xs px-3 py-1 rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
                         >
                           Save
@@ -816,7 +822,7 @@ function ContactsPage({ onBack }: { onBack: () => void }) {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{name}</p>
-                        <p className="text-[0.65rem] text-muted-foreground truncate">{contact.email}</p>
+                        <p className="text-[0.65rem] text-muted-foreground truncate">{contact.username ?? contact.contactId}</p>
                         {contact.notes && (
                           <p className="text-[0.65rem] text-muted-foreground/70 mt-0.5 line-clamp-2">{contact.notes}</p>
                         )}
@@ -830,7 +836,7 @@ function ContactsPage({ onBack }: { onBack: () => void }) {
                           <Pencil className="w-3 h-3" />
                         </button>
                         <button
-                          onClick={() => handleRemove(contact.id)}
+                          onClick={() => handleRemove(contact.contactId)}
                           className="w-6 h-6 flex items-center justify-center rounded-md text-destructive/60 hover:bg-destructive/10 hover:text-destructive transition-colors"
                           title="Remove"
                         >
